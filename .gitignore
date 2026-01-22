@@ -1,0 +1,10 @@
+# Node
+node_modules/
+npm-debug.log*
+.DS_Store
+
+# SQLite
+*.db
+
+# Env
+.env
