@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="english">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Newsroom Monitor</title>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, Arial;
+            margin: 24px;
+        }
+
+        h1 {
+            margin-bottom: 8px;
+        }
+
+        .muted {
+            color: #666;
+            margin-top: 0;
+        }
+
+        form {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin: 16px 0;
+        }
+
+        input {
+            padding: 8px;
+        }
+
+        button {
+            padding: 8px 12px;
+            cursor: pointer;
+        }
+
+        table {
+            border-collapse: collapse;
+            width: 100%;
+            max-width: 950px;
+        }
+
+        th,
+        td {
+            border-bottom: 1px solid #ddd;
+            padding: 10px;
+            text-align: left;
+        }
+
+        tr.inactive {
+            opacity: 0.6;
+        }
+
+        code {
+            background: #f3f3f3;
+            padding: 2px 6px;
+            border-radius: 6px;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Newsroom Monitor</h1>
+    <p class="muted">Lägg till källor och aktivera bevakning. Backend: <code>/api/sources</code></p>
+
+    <h2>Lägg till källa</h2>
+    <form id="addForm">
+        <input id="name" placeholder="Namn (t.ex. Polisen)" required />
+        <input id="url" placeholder="URL (https://...)" required style="min-width: 360px;" />
+        <button type="submit">Lägg till</button>
+    </form>
+
+    <h2>Källor</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>Aktiv</th>
+                <th>Namn</th>
+                <th>URL</th>
+            </tr>
+        </thead>
+        <tbody id="sourcesBody"></tbody>
+    </table>
+
+    <script>
+        async function fetchSources() {
+            const res = await fetch("/api/sources");
+            return res.json();
+        }
+
+        async function toggleSource(id, isActive) {
+            await fetch(`/api/sources/${id}/toggle`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ isActive })
+            });
+        }
+
+        async function addSource(name, url) {
+            await fetch("/api/sources", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ name, url })
+            });
+        }
+
+        async function render() {
+            const sources = await fetchSources();
+            const body = document.getElementById("sourcesBody");
+            body.innerHTML = "";
+
+            for (const s of sources) {
+                const tr = document.createElement("tr");
+                if (s.is_active === 0) tr.classList.add("inactive");
+
+                const tdActive = document.createElement("td");
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.checked = s.is_active === 1;
+
+                checkbox.addEventListener("change", async () => {
+                    checkbox.disabled = true; // undvik dubbelklick
+                    await toggleSource(s.id, checkbox.checked);
+                    await render();
+                });
+
+                tdActive.appendChild(checkbox);
+
+                const tdName = document.createElement("td");
+                tdName.textContent = s.name || "";
+
+                const tdUrl = document.createElement("td");
+                const a = document.createElement("a");
+                a.href = s.url;
+                a.target = "_blank";
+                a.rel = "noreferrer";
+                a.textContent = s.url;
+                tdUrl.appendChild(a);
+
+                tr.appendChild(tdActive);
+                tr.appendChild(tdName);
+                tr.appendChild(tdUrl);
+
+                body.appendChild(tr);
+            }
+        }
+
+        document.getElementById("addForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const name = document.getElementById("name").value.trim();
+            const url = document.getElementById("url").value.trim();
+
+            await addSource(name, url);
+
+            document.getElementById("name").value = "";
+            document.getElementById("url").value = "";
+            await render();
+        });
+
+        render();
+    </script>
+</body>
+
+</html>
