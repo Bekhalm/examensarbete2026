@@ -63,9 +63,8 @@
 
 <body>
     <h1>Newsroom Monitor</h1>
-    <p class="muted">Lägg till källor och aktivera bevakning. Backend: <code>/api/sources</code></p>
 
-    <h2>Lägg till källa</h2>
+    <h2>Lägg till källa du vill bevaka:</h2>
     <form id="addForm">
         <input id="name" placeholder="Namn (t.ex. Polisen)" required />
         <input id="url" placeholder="URL (https://...)" required style="min-width: 360px;" />
@@ -79,6 +78,7 @@
                 <th>Aktiv</th>
                 <th>Namn</th>
                 <th>URL</th>
+
             </tr>
         </thead>
         <tbody id="sourcesBody"></tbody>

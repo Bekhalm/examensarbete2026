@@ -13,7 +13,12 @@ db.serialize(() => {
       is_active INTEGER DEFAULT 1
     )
   `);
+    db.run(`ALTER TABLE sources ADD COLUMN last_hash TEXT`, () => { });
+    db.run(`ALTER TABLE sources ADD COLUMN last_checked_at TEXT`, () => { });
+    db.run(`ALTER TABLE sources ADD COLUMN last_changed_at TEXT`, () => { });
 });
+
+
 
 function getAllSources() {
     return new Promise((resolve, reject) => {
@@ -50,6 +55,34 @@ function toggleSource(id, isActive) {
     });
 }
 
+function getSourceById(id) {
+    return new Promise((resolve, reject) => {
+        db.get("SELECT * FROM sources WHERE id = ?", [id], (err, row) => {
+            if (err) reject(err);
+            else resolve(row);
+        });
+    });
+}
+
+function updateSourceCheck(id, { last_hash, last_checked_at, last_changed_at }) {
+    return new Promise((resolve, reject) => {
+        db.run(
+            `
+        UPDATE sources
+        SET last_hash = ?,
+            last_checked_at = ?,
+            last_changed_at = COALESCE(?, last_changed_at)
+        WHERE id = ?
+        `,
+            [last_hash, last_checked_at, last_changed_at, id],
+            function (err) {
+                if (err) reject(err);
+                else resolve({ id, last_hash, last_checked_at, last_changed_at });
+            }
+        );
+    });
+}
+
 
 
 module.exports = {
@@ -57,4 +90,6 @@ module.exports = {
     getAllSources,
     addSource,
     toggleSource,
+    getSourceById,
+    updateSourceCheck,
 };
