@@ -5,6 +5,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Newsroom Monitor</title>
+
+
     <style>
         body {
             font-family: system-ui, -apple-system, Arial;
@@ -63,6 +65,8 @@
 
 <body>
     <h1>Newsroom Monitor</h1>
+    <button id="enableNotifs">Aktivera notiser</button>
+    <span class="muted" id="notifStatus"></span>
 
     <h2>Lägg till källa du vill bevaka:</h2>
     <form id="addForm">
@@ -78,6 +82,9 @@
                 <th>Aktiv</th>
                 <th>Namn</th>
                 <th>URL</th>
+                <th>Senast kollad</th>
+                <th>Senast ändrad</th>
+
 
             </tr>
         </thead>
@@ -85,6 +92,43 @@
     </table>
 
     <script>
+
+        let notificationsEnabled = false;
+        let lastSeenChangedAt = null;
+
+        // Ljud: funkar efter user gesture
+        let audioCtx = null;
+        function beep() {
+            if (!audioCtx) return;
+            const o = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            o.connect(g);
+            g.connect(audioCtx.destination);
+            o.frequency.value = 880;
+            g.gain.value = 0.05;
+            o.start();
+            setTimeout(() => o.stop(), 150);
+        }
+
+        function notify(title, body) {
+            if (!notificationsEnabled) return;
+            if (!("Notification" in window)) return;
+            new Notification(title, { body });
+        }
+
+        async function enableNotifications() {
+
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+            const perm = await Notification.requestPermission();
+            notificationsEnabled = perm === "granted";
+
+            document.getElementById("notifStatus").textContent =
+                notificationsEnabled ? "Notiser aktiverade ✅" : "Notiser nekade";
+        }
+
+        document.getElementById("enableNotifs").addEventListener("click", enableNotifications);
+
         async function fetchSources() {
             const res = await fetch("/api/sources");
             return res.json();
@@ -127,9 +171,13 @@
                 });
 
                 tdActive.appendChild(checkbox);
+                tr.appendChild(tdActive);
+
+
 
                 const tdName = document.createElement("td");
                 tdName.textContent = s.name || "";
+                tr.appendChild(tdName);
 
                 const tdUrl = document.createElement("td");
                 const a = document.createElement("a");
@@ -138,10 +186,19 @@
                 a.rel = "noreferrer";
                 a.textContent = s.url;
                 tdUrl.appendChild(a);
-
-                tr.appendChild(tdActive);
-                tr.appendChild(tdName);
                 tr.appendChild(tdUrl);
+                const tdChecked = document.createElement("td");
+                tdChecked.textContent = s.last_checked_at
+                    ? new Date(s.last_checked_at).toLocaleString()
+                    : "-";
+                tr.appendChild(tdChecked);
+
+                const tdChanged = document.createElement("td");
+                tdChanged.textContent = s.last_changed_at
+                    ? new Date(s.last_changed_at).toLocaleString()
+                    : "-";
+                tr.appendChild(tdChanged);
+
 
                 body.appendChild(tr);
             }
@@ -160,6 +217,37 @@
         });
 
         render();
+
+
+        async function pollForChanges() {
+            const sources = await fetchSources();
+
+            let newest = lastSeenChangedAt;
+            let newestSource = null;
+
+            for (const s of sources) {
+                if (!s.last_changed_at) continue;
+                if (!newest || s.last_changed_at > newest) {
+                    newest = s.last_changed_at;
+                    newestSource = s;
+                }
+            }
+
+            if (newest && newest !== lastSeenChangedAt) {
+                lastSeenChangedAt = newest;
+
+                const title = "Uppdatering upptäckt";
+                const body = `${newestSource?.name || "Källa"} har ändrats`;
+                notify(title, body);
+                beep();
+
+
+                render();
+            }
+        }
+
+        setInterval(pollForChanges, 10_000);
+
     </script>
 </body>
 

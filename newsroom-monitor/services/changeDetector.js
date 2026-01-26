@@ -6,6 +6,9 @@ const { getSourceById, updateSourceCheck } = require("../db/database");
 
 function normalizeTextFromHtml(html) {
     const $ = cheerio.load(html);
+
+    $("script, style, noscript").remove();
+
     const text = $("body").text();
     return text.replace(/\s+/g, " ").trim();
 }
