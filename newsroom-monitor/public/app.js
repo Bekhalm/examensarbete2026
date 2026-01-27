@@ -35,6 +35,13 @@ async function enableNotifications() {
 
 document.getElementById("enableNotifs").addEventListener("click", enableNotifications);
 
+const bumpBtn = document.getElementById("bumpDemo");
+if (bumpBtn) {
+    bumpBtn.addEventListener("click", async () => {
+        await fetch("/demo/bump", { method: "POST" });
+    });
+}
+
 async function fetchSources() {
     const res = await fetch("/api/sources");
     return res.json();
@@ -132,9 +139,9 @@ async function pollForChanges() {
     let newestSource = null;
 
     for (const s of sources) {
-        if (!s.last_changed_at) continue;
-        if (!newest || s.last_changed_at > newest) {
-            newest = s.last_changed_at;
+        if (!s.last_notified_at) continue;
+        if (!newest || s.last_notified_at > newest) {
+            newest = s.last_notified_at;
             newestSource = s;
         }
     }
@@ -150,6 +157,8 @@ async function pollForChanges() {
 
         render();
     }
+
+
 }
 
 setInterval(pollForChanges, 10_000);

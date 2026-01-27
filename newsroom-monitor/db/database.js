@@ -10,12 +10,14 @@ db.serialize(() => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT,
       url TEXT,
-      is_active INTEGER DEFAULT 1
+      is_active INTEGER DEFAULT 1,
+      last_hash TEXT,
+      last_checked_at TEXT,
+      last_changed_at TEXT,
+      last_notified_at TEXT
     )
   `);
-    db.run(`ALTER TABLE sources ADD COLUMN last_hash TEXT`, () => { });
-    db.run(`ALTER TABLE sources ADD COLUMN last_checked_at TEXT`, () => { });
-    db.run(`ALTER TABLE sources ADD COLUMN last_changed_at TEXT`, () => { });
+
 });
 
 
@@ -83,6 +85,19 @@ function updateSourceCheck(id, { last_hash, last_checked_at, last_changed_at }) 
     });
 }
 
+function updateLastNotified(id, timestamp) {
+    return new Promise((resolve, reject) => {
+        db.run(
+            "UPDATE sources SET last_notified_at = ? WHERE id = ?",
+            [timestamp, id],
+            function (err) {
+                if (err) reject(err);
+                else resolve();
+            }
+        );
+    });
+}
+
 
 
 module.exports = {
@@ -92,4 +107,5 @@ module.exports = {
     toggleSource,
     getSourceById,
     updateSourceCheck,
+    updateLastNotified
 };
