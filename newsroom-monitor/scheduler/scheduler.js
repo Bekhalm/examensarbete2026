@@ -17,16 +17,19 @@ async function runSchedulerTick() {
             if (result.notify) {
                 console.log("NOTIFY:", s.name, s.url, result.last_notified_at);
             }
-        } catch (err) {
-            console.error("Scheduler error:", err);
         }
+
+    } catch (err) {
+        console.error("Scheduler error:", err);
     }
+}
+
 
 function startScheduler(intervalMs = 30_000) {
-        // kör en gång direkt
-        runSchedulerTick();
-        // sen loop
-        setInterval(runSchedulerTick, intervalMs);
-    }
+    // kör en gång direkt
+    runSchedulerTick();
+    // sen loop
+    setInterval(runSchedulerTick, intervalMs);
+}
 
-    module.exports = { startScheduler };
+module.exports = { startScheduler };

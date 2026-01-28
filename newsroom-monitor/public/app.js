@@ -1,9 +1,12 @@
-
 let notificationsEnabled = false;
 let lastSeenChangedAt = null;
+let isRendering = false;
 
-// Ljud: funkar efter user gesture
+// =====================
+// Ljud (kräver user gesture)
+// =====================
 let audioCtx = null;
+
 function beep() {
     if (!audioCtx) return;
     const o = audioCtx.createOscillator();
@@ -16,6 +19,9 @@ function beep() {
     setTimeout(() => o.stop(), 150);
 }
 
+// =====================
+// Notiser
+// =====================
 function notify(title, body) {
     if (!notificationsEnabled) return;
     if (!("Notification" in window)) return;
@@ -23,8 +29,9 @@ function notify(title, body) {
 }
 
 async function enableNotifications() {
-
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (!audioCtx) {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
 
     const perm = await Notification.requestPermission();
     notificationsEnabled = perm === "granted";
@@ -33,8 +40,13 @@ async function enableNotifications() {
         notificationsEnabled ? "Notiser aktiverade ✅" : "Notiser nekade";
 }
 
-document.getElementById("enableNotifs").addEventListener("click", enableNotifications);
+document
+    .getElementById("enableNotifs")
+    .addEventListener("click", enableNotifications);
 
+// =====================
+// Demo bump
+// =====================
 const bumpBtn = document.getElementById("bumpDemo");
 if (bumpBtn) {
     bumpBtn.addEventListener("click", async () => {
@@ -42,6 +54,9 @@ if (bumpBtn) {
     });
 }
 
+// =====================
+// API-anrop
+// =====================
 async function fetchSources() {
     const res = await fetch("/api/sources");
     return res.json();
@@ -63,62 +78,88 @@ async function addSource(name, url) {
     });
 }
 
+// =====================
+// Render UI
+// =====================
 async function render() {
-    const sources = await fetchSources();
-    const body = document.getElementById("sourcesBody");
-    body.innerHTML = "";
+    if (isRendering) return;
+    isRendering = true;
 
-    for (const s of sources) {
-        const tr = document.createElement("tr");
-        if (s.is_active === 0) tr.classList.add("inactive");
+    try {
+        const sources = await fetchSources();
+        const body = document.getElementById("sourcesBody");
+        body.innerHTML = "";
 
-        const tdActive = document.createElement("td");
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = s.is_active === 1;
+        for (const s of sources) {
+            const tr = document.createElement("tr");
+            if (s.is_active === 0) tr.classList.add("inactive");
 
-        checkbox.addEventListener("change", async () => {
-            checkbox.disabled = true; // undvik dubbelklick
-            await toggleSource(s.id, checkbox.checked);
-            await render();
-        });
+            // Aktiv
+            const tdActive = document.createElement("td");
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.checked = s.is_active === 1;
 
-        tdActive.appendChild(checkbox);
-        tr.appendChild(tdActive);
+            checkbox.addEventListener("change", async () => {
+                checkbox.disabled = true;
+                await toggleSource(s.id, checkbox.checked);
+                await render();
+            });
 
+            tdActive.appendChild(checkbox);
+            tr.appendChild(tdActive);
 
+            // Namn
+            const tdName = document.createElement("td");
+            tdName.textContent = s.name || "";
+            tr.appendChild(tdName);
 
-        const tdName = document.createElement("td");
-        tdName.textContent = s.name || "";
-        tr.appendChild(tdName);
+            // URL
+            const tdUrl = document.createElement("td");
+            const a = document.createElement("a");
+            a.href = s.url;
+            a.target = "_blank";
+            a.rel = "noreferrer";
+            a.textContent = s.url;
+            tdUrl.appendChild(a);
+            tr.appendChild(tdUrl);
 
-        const tdUrl = document.createElement("td");
-        const a = document.createElement("a");
-        a.href = s.url;
-        a.target = "_blank";
-        a.rel = "noreferrer";
-        a.textContent = s.url;
-        tdUrl.appendChild(a);
-        tr.appendChild(tdUrl);
-        const tdChecked = document.createElement("td");
-        tdChecked.textContent = s.last_checked_at
-            ? new Date(s.last_checked_at).toLocaleString()
-            : "-";
-        tr.appendChild(tdChecked);
+            // Senast kollad
+            const tdChecked = document.createElement("td");
+            tdChecked.textContent = s.last_checked_at
+                ? new Date(s.last_checked_at).toLocaleString()
+                : "-";
+            tr.appendChild(tdChecked);
 
-        const tdChanged = document.createElement("td");
-        tdChanged.textContent = s.last_changed_at
-            ? new Date(s.last_changed_at).toLocaleString()
-            : "-";
-        tr.appendChild(tdChanged);
+            // Senast ändrad
+            const tdChanged = document.createElement("td");
+            tdChanged.textContent = s.last_changed_at
+                ? new Date(s.last_changed_at).toLocaleString()
+                : "-";
+            tr.appendChild(tdChanged);
 
+            // Senast notifierad (cooldown synlig)
+            const tdNotified = document.createElement("td");
+            tdNotified.textContent = s.last_notified_at
+                ? new Date(s.last_notified_at).toLocaleString()
+                : "-";
+            tr.appendChild(tdNotified);
 
-        body.appendChild(tr);
+            body.appendChild(tr);
+        }
+    } catch (err) {
+        console.error("Render error:", err);
+    } finally {
+        isRendering = false;
     }
 }
 
+// =====================
+// Form: lägg till källa
+// =====================
 document.getElementById("addForm").addEventListener("submit", async (e) => {
     e.preventDefault();
+
     const name = document.getElementById("name").value.trim();
     const url = document.getElementById("url").value.trim();
 
@@ -126,12 +167,13 @@ document.getElementById("addForm").addEventListener("submit", async (e) => {
 
     document.getElementById("name").value = "";
     document.getElementById("url").value = "";
+
     await render();
 });
 
-render();
-
-
+// =====================
+// Polling för notiser
+// =====================
 async function pollForChanges() {
     const sources = await fetchSources();
 
@@ -151,14 +193,17 @@ async function pollForChanges() {
 
         const title = "Uppdatering upptäckt";
         const body = `${newestSource?.name || "Källa"} har ändrats`;
+
         notify(title, body);
         beep();
 
-
         render();
     }
-
-
 }
 
+// =====================
+// Start
+// =====================
+render();
 setInterval(pollForChanges, 10_000);
+setInterval(render, 15_000);
