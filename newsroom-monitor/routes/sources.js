@@ -5,6 +5,7 @@ const {
     getAllSources,
     addSource,
     toggleSource,
+    deleteSource,
 } = require("../db/database");
 
 const { checkOneSourceById } = require("../services/changeDetector");
@@ -55,6 +56,22 @@ router.post("/sources/:id/toggle", async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: "Database error" });
+    }
+});
+
+// DELETE /api/sources/:id
+router.delete("/sources/:id", async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isInteger(id)) {
+        return res.status(400).json({ error: "Invalid id" });
+    }
+    try {
+        const result = await deleteSource(id);
+        if (result.changes === 0) return res.status(404).json({ error: "Not found" });
+        res.json({ ok: true, id });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: "Delete failed" });
     }
 });
 

@@ -98,6 +98,15 @@ function updateLastNotified(id, timestamp) {
     });
 }
 
+function deleteSource(id) {
+    return new Promise((resolve, reject) => {
+        db.run("DELETE FROM sources WHERE id = ?", [id], function (err) {
+            if (err) reject(err);
+            else resolve({ id, changes: this.changes });
+        });
+    });
+}
+
 
 
 module.exports = {
@@ -107,5 +116,6 @@ module.exports = {
     toggleSource,
     getSourceById,
     updateSourceCheck,
-    updateLastNotified
+    http://localhost:3000    updateLastNotified,
+        deleteSource
 };

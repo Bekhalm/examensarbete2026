@@ -3,7 +3,7 @@ let lastSeenChangedAt = null;
 let isRendering = false;
 
 
-// Ljud (kräver user gesture)
+// För ljud, krävs user gesture.
 
 let audioCtx = null;
 
@@ -54,7 +54,6 @@ if (bumpBtn) {
 
 
 // API-anrop
-
 async function fetchSources() {
     const res = await fetch("/api/sources");
     return res.json();
@@ -74,6 +73,10 @@ async function addSource(name, url) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, url })
     });
+}
+
+async function removeSource(id) {
+    await fetch(`/api/sources/${id}`, { method: "DELETE" });
 }
 
 
@@ -142,6 +145,21 @@ async function render() {
                 ? new Date(s.last_notified_at).toLocaleString()
                 : "-";
             tr.appendChild(tdNotified);
+
+            // Ta bort (cross button)
+            const tdRemove = document.createElement("td");
+            const removeBtn = document.createElement("button");
+            removeBtn.type = "button";
+            removeBtn.className = "remove-btn";
+            removeBtn.textContent = "×";
+            removeBtn.title = "Ta bort";
+            removeBtn.addEventListener("click", async () => {
+                removeBtn.disabled = true;
+                await removeSource(s.id);
+                await render();
+            });
+            tdRemove.appendChild(removeBtn);
+            tr.appendChild(tdRemove);
 
             body.appendChild(tr);
         }
