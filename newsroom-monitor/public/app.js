@@ -2,9 +2,9 @@ let notificationsEnabled = false;
 let lastSeenChangedAt = null;
 let isRendering = false;
 
-// =====================
+
 // Ljud (kräver user gesture)
-// =====================
+
 let audioCtx = null;
 
 function beep() {
@@ -19,9 +19,8 @@ function beep() {
     setTimeout(() => o.stop(), 150);
 }
 
-// =====================
+
 // Notiser
-// =====================
 function notify(title, body) {
     if (!notificationsEnabled) return;
     if (!("Notification" in window)) return;
@@ -44,9 +43,8 @@ document
     .getElementById("enableNotifs")
     .addEventListener("click", enableNotifications);
 
-// =====================
+
 // Demo bump
-// =====================
 const bumpBtn = document.getElementById("bumpDemo");
 if (bumpBtn) {
     bumpBtn.addEventListener("click", async () => {
@@ -54,9 +52,9 @@ if (bumpBtn) {
     });
 }
 
-// =====================
+
 // API-anrop
-// =====================
+
 async function fetchSources() {
     const res = await fetch("/api/sources");
     return res.json();
@@ -78,9 +76,9 @@ async function addSource(name, url) {
     });
 }
 
-// =====================
+
 // Render UI
-// =====================
+
 async function render() {
     if (isRendering) return;
     isRendering = true;
@@ -154,9 +152,8 @@ async function render() {
     }
 }
 
-// =====================
+
 // Form: lägg till källa
-// =====================
 document.getElementById("addForm").addEventListener("submit", async (e) => {
     e.preventDefault();
 
@@ -171,9 +168,8 @@ document.getElementById("addForm").addEventListener("submit", async (e) => {
     await render();
 });
 
-// =====================
+
 // Polling för notiser
-// =====================
 async function pollForChanges() {
     const sources = await fetchSources();
 
@@ -201,9 +197,8 @@ async function pollForChanges() {
     }
 }
 
-// =====================
+
 // Start
-// =====================
 render();
 setInterval(pollForChanges, 10_000);
 setInterval(render, 15_000);
