@@ -25,6 +25,23 @@ function normalizeTextFromHtml(html) {
     return text.replace(/\s+/g, " ").trim();
 }
 
+function toIsoOrNull(value) {
+    if (!value) return null;
+    const timestamp = Date.parse(value);
+    if (Number.isNaN(timestamp)) return null;
+    return new Date(timestamp).toISOString();
+}
+
+function newestIsoFrom(values) {
+    let newest = null;
+    for (const value of values) {
+        const iso = toIsoOrNull(value);
+        if (!iso) continue;
+        if (!newest || iso > newest) newest = iso;
+    }
+    return newest;
+}
+
 function isHttpUrl(url) {
     try {
         const u = new URL(url);
@@ -101,7 +118,7 @@ function extractItemsFromFeed(body, sourceUrl) {
             item_id: itemId,
             title: title || "(untitled)",
             url: normalizedUrl,
-            published_at: publishedAt || null,
+            published_at: toIsoOrNull(publishedAt),
         });
     });
 
@@ -141,6 +158,51 @@ function extractItemsFromHtml(body, sourceUrl) {
     });
 
     return items;
+}
+
+function collectJsonLdDates(node, out) {
+    if (!node) return;
+    if (Array.isArray(node)) {
+        for (const item of node) collectJsonLdDates(item, out);
+        return;
+    }
+    if (typeof node !== "object") return;
+
+    const candidate = node.dateModified || node.datePublished || node.uploadDate || node.dateCreated;
+    if (candidate) out.push(candidate);
+
+    for (const value of Object.values(node)) {
+        if (value && typeof value === "object") collectJsonLdDates(value, out);
+    }
+}
+
+function extractSiteTimestampFromHtml(body) {
+    const $ = cheerio.load(body);
+    const candidates = [];
+
+    $("time[datetime]").each((_, el) => {
+        const value = $(el).attr("datetime");
+        if (value) candidates.push(value);
+    });
+
+    $("script[type='application/ld+json']").each((_, el) => {
+        const raw = $(el).html();
+        if (!raw) return;
+        try {
+            const parsed = JSON.parse(raw);
+            collectJsonLdDates(parsed, candidates);
+        } catch {
+            // Ignore malformed JSON-LD blocks.
+        }
+    });
+
+    return newestIsoFrom(candidates);
+}
+
+function getSiteChangedAt(unseenItems, body) {
+    const fromItems = newestIsoFrom(unseenItems.map((item) => item.published_at).filter(Boolean));
+    if (fromItems) return fromItems;
+    return extractSiteTimestampFromHtml(body);
 }
 
 function looksLikeFeed(body, contentType = "") {
@@ -201,11 +263,14 @@ async function checkOneSourceById(id) {
             const newHash = sha256(normalized);
             const hadHashBefore = !!source.last_hash;
             const changed = !isFirstCheck && hadHashBefore && source.last_hash !== newHash;
+            const siteChangedAt = changed ? extractSiteTimestampFromHtml(body) : null;
 
             await updateSourceCheck(source.id, {
                 last_hash: newHash,
                 last_checked_at: now,
-                last_changed_at: changed ? now : null,
+                last_detected_at: changed ? now : null,
+                last_changed_at: changed ? siteChangedAt : null,
+                update_last_changed: changed,
             });
 
             let notify = false;
@@ -224,7 +289,8 @@ async function checkOneSourceById(id) {
                 new_items_count: 0,
                 latest_item_title: null,
                 last_checked_at: now,
-                last_changed_at: changed ? now : source.last_changed_at,
+                last_detected_at: changed ? now : source.last_detected_at,
+                last_changed_at: changed ? siteChangedAt : source.last_changed_at,
                 last_notified_at: notify ? now : source.last_notified_at,
             };
         }
@@ -234,11 +300,14 @@ async function checkOneSourceById(id) {
         const isBaselineItemsRun = isFirstCheck || seenIds.size === 0;
         const newHash = sha256(items.map((i) => i.item_id).join("|"));
         const changed = !isBaselineItemsRun && unseenItems.length > 0;
+        const siteChangedAt = changed ? getSiteChangedAt(unseenItems, body) : null;
 
         await updateSourceCheck(source.id, {
             last_hash: newHash,
             last_checked_at: now,
-            last_changed_at: changed ? now : null,
+            last_detected_at: changed ? now : null,
+            last_changed_at: changed ? siteChangedAt : null,
+            update_last_changed: changed,
         });
 
         let notify = false;
@@ -257,14 +326,17 @@ async function checkOneSourceById(id) {
             new_items_count: changed ? unseenItems.length : 0,
             latest_item_title: unseenItems[0]?.title || null,
             last_checked_at: now,
-            last_changed_at: changed ? now : source.last_changed_at,
+            last_detected_at: changed ? now : source.last_detected_at,
+            last_changed_at: changed ? siteChangedAt : source.last_changed_at,
             last_notified_at: notify ? now : source.last_notified_at,
         };
     } catch (err) {
         await updateSourceCheck(source.id, {
             last_hash: source.last_hash,
             last_checked_at: now,
+            last_detected_at: null,
             last_changed_at: null,
+            update_last_changed: false,
         });
 
         return {

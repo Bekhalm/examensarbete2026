@@ -49,17 +49,9 @@ tr.latest-notified {
     background: #fff7d6;
 }
 
-tr.notified-recently {
-    background: #f5f9ff;
-}
-
 .status-latest {
     font-weight: 700;
     color: #8a5a00;
-}
-
-.status-recent {
-    color: #2257a0;
 }
 
 code {

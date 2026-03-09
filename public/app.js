@@ -3,6 +3,19 @@ let lastSeenChangedAt = null;
 let isRendering = false;
 let latestNotifiedSourceId = null;
 
+function formatTimestamp(isoString) {
+    if (!isoString) return "-";
+    const d = new Date(isoString);
+    if (Number.isNaN(d.getTime())) return "-";
+    return d.toLocaleString("sv-SE", {
+        day: "2-digit",
+        month: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+    });
+}
+
 // =====================
 // Ljud (kräver user gesture)
 // =====================
@@ -105,10 +118,6 @@ async function render() {
             if (s.is_active === 0) tr.classList.add("inactive");
             if (latestNotifiedSourceId === s.id) tr.classList.add("latest-notified");
 
-            const notifiedRecently = s.last_notified_at
-                && (Date.now() - new Date(s.last_notified_at).getTime() < 5 * 60 * 1000);
-            if (notifiedRecently) tr.classList.add("notified-recently");
-
             // Aktiv
             const tdActive = document.createElement("td");
             const checkbox = document.createElement("input");
@@ -147,23 +156,17 @@ async function render() {
 
             // Senast kollad
             const tdChecked = document.createElement("td");
-            tdChecked.textContent = s.last_checked_at
-                ? new Date(s.last_checked_at).toLocaleString()
-                : "-";
+            tdChecked.textContent = formatTimestamp(s.last_checked_at);
             tr.appendChild(tdChecked);
 
-            // Senast ändrad
+            // Senast ändrad på sajt
             const tdChanged = document.createElement("td");
-            tdChanged.textContent = s.last_changed_at
-                ? new Date(s.last_changed_at).toLocaleString()
-                : "-";
+            tdChanged.textContent = formatTimestamp(s.last_changed_at);
             tr.appendChild(tdChanged);
 
             // Senast notifierad (cooldown synlig)
             const tdNotified = document.createElement("td");
-            tdNotified.textContent = s.last_notified_at
-                ? new Date(s.last_notified_at).toLocaleString()
-                : "-";
+            tdNotified.textContent = formatTimestamp(s.last_notified_at);
             tr.appendChild(tdNotified);
 
             // Tydlig status
@@ -171,9 +174,6 @@ async function render() {
             if (latestNotifiedSourceId === s.id) {
                 tdStatus.textContent = "LATEST ALERT";
                 tdStatus.classList.add("status-latest");
-            } else if (notifiedRecently) {
-                tdStatus.textContent = "Recent alert";
-                tdStatus.classList.add("status-recent");
             } else {
                 tdStatus.textContent = "-";
             }

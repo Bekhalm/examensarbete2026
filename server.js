@@ -1,6 +1,3 @@
-console.log("RUNNING SERVER FILE:", __filename);
-
-
 const path = require("path");
 const express = require("express");
 
@@ -23,18 +20,13 @@ app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "public", "index.html"));
 });
 
-// Koll
 app.get("/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
 app.use("/api", sourcesRouter);
 
-// DEMO (för att kunna trigga ändringar vid examination)
 let demoVersion = 1;
-
-console.log("Registering demo routes...");
-
 
 app.get("/demo/source", (req, res) => {
   res.type("html").send(`

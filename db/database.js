@@ -13,10 +13,19 @@ db.serialize(() => {
       is_active INTEGER DEFAULT 1,
       last_hash TEXT,
       last_checked_at TEXT,
+      last_detected_at TEXT,
       last_changed_at TEXT,
       last_notified_at TEXT
     )
   `);
+
+    db.all("PRAGMA table_info(sources)", (err, rows = []) => {
+        if (err) return;
+        const hasLastDetectedAt = rows.some((r) => r.name === "last_detected_at");
+        if (!hasLastDetectedAt) {
+            db.run("ALTER TABLE sources ADD COLUMN last_detected_at TEXT");
+        }
+    });
 
     db.run(`
     CREATE TABLE IF NOT EXISTS seen_items (
@@ -87,20 +96,34 @@ function getSourceById(id) {
     });
 }
 
-function updateSourceCheck(id, { last_hash, last_checked_at, last_changed_at }) {
+function updateSourceCheck(
+    id,
+    { last_hash, last_checked_at, last_detected_at, last_changed_at, update_last_changed = false }
+) {
     return new Promise((resolve, reject) => {
         db.run(
             `
         UPDATE sources
         SET last_hash = ?,
             last_checked_at = ?,
-            last_changed_at = COALESCE(?, last_changed_at)
+            last_detected_at = COALESCE(?, last_detected_at),
+            last_changed_at = CASE
+                WHEN ? THEN ?
+                ELSE last_changed_at
+            END
         WHERE id = ?
         `,
-            [last_hash, last_checked_at, last_changed_at, id],
+            [
+                last_hash,
+                last_checked_at,
+                last_detected_at,
+                update_last_changed ? 1 : 0,
+                last_changed_at || null,
+                id,
+            ],
             function (err) {
                 if (err) reject(err);
-                else resolve({ id, last_hash, last_checked_at, last_changed_at });
+                else resolve({ id, last_hash, last_checked_at, last_detected_at, last_changed_at });
             }
         );
     });
