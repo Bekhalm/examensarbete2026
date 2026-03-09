@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="english">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Newsroom Monitor</title>
+    <link rel="stylesheet" href="/style.css" />
+
+</head>
+
+<body>
+    <h1>Newsroom Monitor</h1>
+    <button id="bumpDemo">Bump demo-version</button>
+    <button id="enableNotifs">Aktivera notiser</button>
+    <span class="muted" id="notifStatus"></span>
+
+    <h2>Lägg till källa du vill bevaka:</h2>
+    <form id="addForm">
+        <input id="name" placeholder="Namn (t.ex. Polisen)" required />
+        <input id="url" placeholder="URL (https://...)" required style="min-width: 360px;" />
+        <button type="submit">Lägg till</button>
+    </form>
+
+    <h2>Källor</h2>
+    <p class="muted">
+        Obs: <strong>Senast ändrad</strong> kan vara nyare än <strong>Senast notifierad</strong>.
+        Notiser har cooldown (cirka 60 sek) för att minska notisbrus.
+    </p>
+    <table>
+        <thead>
+            <tr>
+                <th>Aktiv</th>
+                <th>Namn</th>
+                <th>URL</th>
+                <th>Senast kollad</th>
+                <th>Senast ändrad</th>
+                <th>Senast notifierad</th>
+                <th>Notisstatus</th>
+
+
+
+            </tr>
+        </thead>
+        <tbody id="sourcesBody"></tbody>
+    </table>
+
+    <script src="/app.js" defer></script>
+
+</body>
+
+</html>
