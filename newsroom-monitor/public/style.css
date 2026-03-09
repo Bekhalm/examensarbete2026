@@ -1,0 +1,68 @@
+body {
+    font-family: system-ui, -apple-system, Arial;
+    margin: 24px;
+}
+
+h1 {
+    margin-bottom: 8px;
+}
+
+.muted {
+    color: #666;
+    margin-top: 0;
+}
+
+form {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 16px 0;
+}
+
+input {
+    padding: 8px;
+}
+
+button {
+    padding: 8px 12px;
+    cursor: pointer;
+}
+
+table {
+    border-collapse: collapse;
+    width: 100%;
+    max-width: 950px;
+}
+
+th,
+td {
+    border-bottom: 1px solid #ddd;
+    padding: 10px;
+    text-align: left;
+}
+
+tr.inactive {
+    opacity: 0.6;
+}
+
+.remove-btn {
+    min-width: 28px;
+    padding: 4px 8px;
+    font-size: 1.2rem;
+    line-height: 1;
+    color: #666;
+    background: transparent;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.remove-btn:hover:not(:disabled) {
+    color: #c00;
+    border-color: #c00;
+}
+
+code {
+    background: #f3f3f3;
+    padding: 2px 6px;
+    border-radius: 6px;
+}

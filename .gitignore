@@ -1,1 +1,14 @@
+HEAD
+# Node
 node_modules/
+npm-debug.log*
+.DS_Store
+
+# SQLite
+*.db
+
+# Env
+.env
+
+node_modules/
+80a2448 (synkar från ny dator)
