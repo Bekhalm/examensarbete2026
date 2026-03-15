@@ -269,8 +269,8 @@ async function checkOneSourceById(id) {
                 last_hash: newHash,
                 last_checked_at: now,
                 last_detected_at: changed ? now : null,
-                last_changed_at: changed ? siteChangedAt : null,
-                update_last_changed: changed,
+                last_changed_at: siteChangedAt,
+                update_last_changed: changed && siteChangedAt !== null,
             });
 
             let notify = false;
@@ -290,7 +290,7 @@ async function checkOneSourceById(id) {
                 latest_item_title: null,
                 last_checked_at: now,
                 last_detected_at: changed ? now : source.last_detected_at,
-                last_changed_at: changed ? siteChangedAt : source.last_changed_at,
+                last_changed_at: changed && siteChangedAt ? siteChangedAt : source.last_changed_at,
                 last_notified_at: notify ? now : source.last_notified_at,
             };
         }
@@ -306,8 +306,8 @@ async function checkOneSourceById(id) {
             last_hash: newHash,
             last_checked_at: now,
             last_detected_at: changed ? now : null,
-            last_changed_at: changed ? siteChangedAt : null,
-            update_last_changed: changed,
+            last_changed_at: siteChangedAt,
+            update_last_changed: changed && siteChangedAt !== null,
         });
 
         let notify = false;
@@ -327,7 +327,7 @@ async function checkOneSourceById(id) {
             latest_item_title: unseenItems[0]?.title || null,
             last_checked_at: now,
             last_detected_at: changed ? now : source.last_detected_at,
-            last_changed_at: changed ? siteChangedAt : source.last_changed_at,
+            last_changed_at: changed && siteChangedAt ? siteChangedAt : source.last_changed_at,
             last_notified_at: notify ? now : source.last_notified_at,
         };
     } catch (err) {
