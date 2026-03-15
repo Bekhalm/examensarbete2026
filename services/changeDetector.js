@@ -42,6 +42,27 @@ function newestIsoFrom(values) {
     return newest;
 }
 
+function parseClockTimeFromText(text, nowIso) {
+    if (!text) return null;
+    const match = text.match(/\b([01]?\d|2[0-3])[.:]([0-5]\d)\b/);
+    if (!match) return null;
+
+    const hours = Number(match[1]);
+    const minutes = Number(match[2]);
+    const now = nowIso ? new Date(nowIso) : new Date();
+    if (Number.isNaN(now.getTime())) return null;
+
+    const candidate = new Date(now);
+    candidate.setHours(hours, minutes, 0, 0);
+
+    // If parsed time is far ahead of "now", assume it belongs to previous day.
+    if (candidate.getTime() - now.getTime() > 5 * 60 * 1000) {
+        candidate.setDate(candidate.getDate() - 1);
+    }
+
+    return candidate.toISOString();
+}
+
 function isHttpUrl(url) {
     try {
         const u = new URL(url);
@@ -125,7 +146,7 @@ function extractItemsFromFeed(body, sourceUrl) {
     return items;
 }
 
-function extractItemsFromHtml(body, sourceUrl) {
+function extractItemsFromHtml(body, sourceUrl, nowIso) {
     const $ = cheerio.load(body);
     const items = [];
     const dedupe = new Set();
@@ -153,56 +174,15 @@ function extractItemsFromHtml(body, sourceUrl) {
             item_id: itemId,
             title: text,
             url: normalizedUrl,
-            published_at: null,
+            published_at: parseClockTimeFromText(text, nowIso),
         });
     });
 
     return items;
 }
 
-function collectJsonLdDates(node, out) {
-    if (!node) return;
-    if (Array.isArray(node)) {
-        for (const item of node) collectJsonLdDates(item, out);
-        return;
-    }
-    if (typeof node !== "object") return;
-
-    const candidate = node.dateModified || node.datePublished || node.uploadDate || node.dateCreated;
-    if (candidate) out.push(candidate);
-
-    for (const value of Object.values(node)) {
-        if (value && typeof value === "object") collectJsonLdDates(value, out);
-    }
-}
-
-function extractSiteTimestampFromHtml(body) {
-    const $ = cheerio.load(body);
-    const candidates = [];
-
-    $("time[datetime]").each((_, el) => {
-        const value = $(el).attr("datetime");
-        if (value) candidates.push(value);
-    });
-
-    $("script[type='application/ld+json']").each((_, el) => {
-        const raw = $(el).html();
-        if (!raw) return;
-        try {
-            const parsed = JSON.parse(raw);
-            collectJsonLdDates(parsed, candidates);
-        } catch {
-            // Ignore malformed JSON-LD blocks.
-        }
-    });
-
-    return newestIsoFrom(candidates);
-}
-
-function getSiteChangedAt(unseenItems, body) {
-    const fromItems = newestIsoFrom(unseenItems.map((item) => item.published_at).filter(Boolean));
-    if (fromItems) return fromItems;
-    return extractSiteTimestampFromHtml(body);
+function getSiteChangedAt(unseenItems) {
+    return newestIsoFrom(unseenItems.map((item) => item.published_at).filter(Boolean));
 }
 
 function looksLikeFeed(body, contentType = "") {
@@ -251,7 +231,7 @@ async function checkOneSourceById(id) {
 
         const extractedItems = looksLikeFeed(body, contentType)
             ? extractItemsFromFeed(body, source.url)
-            : extractItemsFromHtml(body, source.url);
+            : extractItemsFromHtml(body, source.url, now);
 
         const items = extractedItems.slice(0, MAX_ITEMS_PER_CHECK);
         const seenIds = new Set(await getSeenItemIds(source.id));
@@ -263,14 +243,13 @@ async function checkOneSourceById(id) {
             const newHash = sha256(normalized);
             const hadHashBefore = !!source.last_hash;
             const changed = !isFirstCheck && hadHashBefore && source.last_hash !== newHash;
-            const siteChangedAt = changed ? extractSiteTimestampFromHtml(body) : null;
 
             await updateSourceCheck(source.id, {
                 last_hash: newHash,
                 last_checked_at: now,
                 last_detected_at: changed ? now : null,
-                last_changed_at: siteChangedAt,
-                update_last_changed: changed && siteChangedAt !== null,
+                last_changed_at: null,
+                update_last_changed: false,
             });
 
             let notify = false;
@@ -290,7 +269,7 @@ async function checkOneSourceById(id) {
                 latest_item_title: null,
                 last_checked_at: now,
                 last_detected_at: changed ? now : source.last_detected_at,
-                last_changed_at: changed && siteChangedAt ? siteChangedAt : source.last_changed_at,
+                last_changed_at: source.last_changed_at,
                 last_notified_at: notify ? now : source.last_notified_at,
             };
         }
@@ -300,7 +279,7 @@ async function checkOneSourceById(id) {
         const isBaselineItemsRun = isFirstCheck || seenIds.size === 0;
         const newHash = sha256(items.map((i) => i.item_id).join("|"));
         const changed = !isBaselineItemsRun && unseenItems.length > 0;
-        const siteChangedAt = changed ? getSiteChangedAt(unseenItems, body) : null;
+        const siteChangedAt = changed ? getSiteChangedAt(unseenItems) : null;
 
         await updateSourceCheck(source.id, {
             last_hash: newHash,

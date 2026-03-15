@@ -14,5 +14,5 @@ Open: `http://localhost:3000`
 ## Notes
 
 - Browser notifications require clicking **Aktivera notiser**.
-- `Senast ändrad på sajt` is the site's own timestamp (if available; otherwise `-`).
+- `Senast ändrad på sajt` is publication time for the newest detected article (if available; otherwise `-`).
 - Cooldown is about 60 seconds to reduce notification fatigue.

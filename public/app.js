@@ -154,11 +154,6 @@ async function render() {
             tdUrl.appendChild(a);
             tr.appendChild(tdUrl);
 
-            // Senast kollad
-            const tdChecked = document.createElement("td");
-            tdChecked.textContent = formatTimestamp(s.last_checked_at);
-            tr.appendChild(tdChecked);
-
             // Senast ändrad på sajt
             const tdChanged = document.createElement("td");
             tdChanged.textContent = formatTimestamp(s.last_changed_at);
