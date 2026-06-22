@@ -1,14 +1,15 @@
-HEAD
 # Node
 node_modules/
 npm-debug.log*
 .DS_Store
 
-# SQLite
+# SQLite (local database — should not be in version control)
 *.db
+*.db-journal
+*.db-wal
 
 # Env
 .env
 
-node_modules/
-80a2448 (synkar från ny dator)
+# Single-instance lock
+.server.lock

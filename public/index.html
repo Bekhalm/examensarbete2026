@@ -4,49 +4,112 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Newsroom Monitor</title>
+    <title>Newsroom Monitor — bevakning i realtid</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+        href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,600;0,800;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        rel="stylesheet" />
     <link rel="stylesheet" href="/style.css" />
-
 </head>
 
 <body>
-    <h1>Newsroom Monitor</h1>
-    <button id="bumpDemo">Bump demo-version</button>
-    <button id="enableNotifs">Aktivera notiser</button>
-    <span class="muted" id="notifStatus"></span>
+    <div class="bg-grid" aria-hidden="true"></div>
 
-    <h2>Lägg till källa du vill bevaka:</h2>
-    <form id="addForm">
-        <input id="name" placeholder="Namn (t.ex. Polisen)" required />
-        <input id="url" placeholder="URL (https://...)" required style="min-width: 360px;" />
-        <button type="submit">Lägg till</button>
-    </form>
+    <header class="topbar">
+        <div class="brand">
+            <span class="live-dot" title="Live"></span>
+            <span class="wordmark">Newsroom<strong>Monitor</strong></span>
+            <span class="badge-live">● LIVE</span>
+        </div>
+        <div class="topbar-right">
+            <span class="clock" id="clock">--:--:--</span>
+            <div class="volume" title="Notisvolym">
+                <button class="icon-btn vol-btn" id="volBtn" aria-label="Ljud av/på">🔊</button>
+                <input type="range" id="volSlider" class="vol-slider" min="0" max="100" step="1" value="50"
+                    aria-label="Volym" />
+            </div>
+            <button class="btn btn-ghost" id="enableNotifs">
+                <span class="bell">🔔</span> Aktivera notiser
+            </button>
+            <span class="notif-status" id="notifStatus"></span>
+        </div>
+    </header>
 
-    <h2>Källor</h2>
-    <p class="muted">
-        Obs: <strong>Senast ändrad på sajt</strong> visar publiceringstid för senaste upptäckta artikel
-        när den finns (annars "-").
-        Notiser har cooldown (cirka 60 sek) för att minska notisbrus.
-    </p>
-    <table>
-        <thead>
-            <tr>
-                <th>Aktiv</th>
-                <th>Namn</th>
-                <th>URL</th>
-                <th>Senast ändrad på sajt</th>
-                <th>Senast notifierad</th>
-                <th>Notisstatus</th>
+    <main class="container">
+        <section class="hero">
+            <p class="lede">
+                Lägg till sajterna du följer, du larmas när något nytt publiceras.
+            </p>
+        </section>
 
+        <div class="layout">
+            <section class="panel sources-panel">
+                <div class="panel-head">
+                    <h2>Bevakade källor</h2>
+                    <button class="btn btn-mini danger" id="clearSources" title="Ta bort alla källor" hidden>Rensa alla</button>
+                </div>
 
+                <form id="addForm" class="add-form" autocomplete="off">
+                    <div class="field">
+                        <input id="name" placeholder="Namn (t.ex. Polisen)" required />
+                    </div>
+                    <div class="field field-grow">
+                        <input id="url" type="text" inputmode="url" placeholder="URL eller RSS (https://…)" required />
+                    </div>
+                    <button type="submit" class="btn btn-accent">+ Lägg till källa</button>
+                </form>
+                <p class="form-error" id="formError" hidden></p>
 
-            </tr>
-        </thead>
-        <tbody id="sourcesBody"></tbody>
-    </table>
+                <div id="sourcesWrap" class="sources-wrap">
+                    <div class="empty" id="emptyState">
+                        <div class="empty-icon">📡</div>
+                        <p>Inga källor ännu. Lägg till den första sajten du vill bevaka.</p>
+                    </div>
+                    <table class="sources-table" id="sourcesTable" hidden>
+                        <thead>
+                            <tr>
+                                <th class="col-status">Status</th>
+                                <th class="col-source">Källa</th>
+                                <th class="col-notified" title="När vi upptäckte ändringen och larmade dig">Larmade</th>
+                                <th class="col-actions"></th>
+                            </tr>
+                        </thead>
+                        <tbody id="sourcesBody"></tbody>
+                    </table>
+                </div>
+            </section>
+
+            <aside class="panel alerts-panel">
+                <div class="panel-head">
+                    <h2>Larmflöde</h2>
+                    <span class="live-dot small" title="Live"></span>
+                </div>
+                <ul class="alert-log" id="alertLog">
+                    <li class="alert-empty" id="alertEmpty">Inga larm sedan start. Det dyker upp här direkt.</li>
+                </ul>
+            </aside>
+        </div>
+    </main>
+
+    <footer class="site-footer">
+        <span class="footer-initials">B.M</span>
+    </footer>
+
+    <div id="modal" class="modal" hidden>
+        <div class="modal-backdrop" data-close></div>
+        <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+            <div class="modal-head">
+                <h3 id="modalTitle">Historik</h3>
+                <button class="icon-btn" data-close>✕</button>
+            </div>
+            <div class="modal-body" id="modalBody"></div>
+        </div>
+    </div>
+
+    <div id="toastWrap" class="toast-wrap" aria-live="polite"></div>
 
     <script src="/app.js" defer></script>
-
 </body>
 
 </html>
