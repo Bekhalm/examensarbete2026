@@ -1,5 +1,6 @@
 const path = require("path");
 const sqlite3 = require("sqlite3").verbose();
+const { PERMANENT_SOURCE_URLS } = require("../lib/permanentSources");
 
 const dbPath = path.join(__dirname, "app.db");
 const db = new sqlite3.Database(dbPath);
@@ -71,6 +72,9 @@ async function migrate() {
     await ensureColumn("sources", "extract_mode", "TEXT DEFAULT 'auto'");
     await ensureColumn("sources", "next_retry_at", "TEXT");
     await ensureColumn("sources", "created_at", "TEXT");
+    // Core sources that must never be removed (trash button hidden, delete blocked).
+    await ensureColumn("sources", "is_permanent", "INTEGER DEFAULT 0");
+    await syncPermanentSources();
 
     await run(`
         CREATE TABLE IF NOT EXISTS seen_items (
@@ -94,6 +98,16 @@ async function migrate() {
             created_at TEXT NOT NULL
         )
     `);
+}
+
+// The URL list is authoritative: flag listed sources as permanent and clear the
+// flag from any that are no longer listed, so editing the list takes effect on
+// the next startup.
+async function syncPermanentSources() {
+    await run("UPDATE sources SET is_permanent = 0 WHERE is_permanent = 1");
+    if (!PERMANENT_SOURCE_URLS.length) return;
+    const placeholders = PERMANENT_SOURCE_URLS.map(() => "?").join(", ");
+    await run(`UPDATE sources SET is_permanent = 1 WHERE url IN (${placeholders})`, PERMANENT_SOURCE_URLS);
 }
 
 // ---------- Sources ----------
@@ -128,14 +142,18 @@ async function toggleSource(id, isActive) {
 }
 
 async function deleteSource(id) {
+    const row = await get("SELECT is_permanent FROM sources WHERE id = ?", [id]);
+    if (!row) return { id, found: false };
+    if (row.is_permanent) return { id, found: true, blocked: true };
     await run("DELETE FROM seen_items WHERE source_id = ?", [id]);
     const res = await run("DELETE FROM sources WHERE id = ?", [id]);
     return { id, found: res.changes > 0 };
 }
 
+// Permanent sources are never cleared — only the editable ones are removed.
 async function deleteAllSources() {
-    await run("DELETE FROM seen_items");
-    const res = await run("DELETE FROM sources");
+    await run("DELETE FROM seen_items WHERE source_id IN (SELECT id FROM sources WHERE is_permanent = 0)");
+    const res = await run("DELETE FROM sources WHERE is_permanent = 0");
     return { deleted: res.changes };
 }
 

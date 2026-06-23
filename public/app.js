@@ -91,6 +91,16 @@ tickClock();
 // Sound + notifications
 // =====================
 let audioCtx = null;
+// Browsers keep audio "locked" until the user interacts with the page at least
+// once per load. Permission can be granted yet sound still won't play, so we
+// track the unlocked state separately and reflect it in the button.
+let audioReady = false;
+function markAudioReady() {
+    if (!audioReady && audioCtx && audioCtx.state === "running") {
+        audioReady = true;
+        updateNotifUi();
+    }
+}
 function ensureAudio() {
     if (!audioCtx) {
         try {
@@ -99,7 +109,11 @@ function ensureAudio() {
             return;
         }
     }
-    if (audioCtx.state === "suspended") audioCtx.resume();
+    if (audioCtx.state === "suspended") {
+        audioCtx.resume().then(markAudioReady).catch(() => { /* blocked until a gesture */ });
+    } else {
+        markAudioReady();
+    }
 }
 // Browsers block audio until the user interacts with the page at least once.
 // Quietly arm the sound on the first interaction so beeps work without needing
@@ -217,22 +231,34 @@ function updateNotifUi() {
     const btn = $("enableNotifs");
     if (!btn) return;
     btn.hidden = false;
+    const status = $("notifStatus");
+    if (status) status.classList.remove("warn", "ok", "bad");
     const denied = "Notification" in window && Notification.permission === "denied";
-    if (notificationsEnabled) {
+    if (notificationsEnabled && audioReady) {
         btn.innerHTML = '<span class="bell">🔔</span> Notiser på · testa ljud';
         btn.classList.add("on");
+        btn.classList.remove("needs-action");
         btn.title = "Notiser och ljud är på. Klicka för att testa pinget.";
+        if (status) status.textContent = "";
     } else if (denied) {
         btn.innerHTML = '<span class="bell">🔕</span> Notiser blockerade';
-        btn.classList.remove("on");
+        btn.classList.remove("on", "needs-action");
         btn.title = "Tillåt notiser i webbläsarens inställningar för att få larm.";
+        if (status) { status.textContent = "Blockerade i webbläsaren"; status.classList.add("bad"); }
+    } else if (notificationsEnabled) {
+        // Permission granted, but sound is still locked until a click this load.
+        btn.innerHTML = '<span class="bell">🔔</span> Klicka för att tillåta notiser';
+        btn.classList.add("needs-action");
+        btn.classList.remove("on");
+        btn.title = "Notistillstånd finns, men ljudet är låst tills du klickar en gång den här sessionen.";
+        if (status) status.textContent = "";
     } else {
         btn.innerHTML = '<span class="bell">🔔</span> Aktivera ljud & notiser';
+        btn.classList.add("needs-action");
         btn.classList.remove("on");
-        btn.title = "Aktivera ljud och banner-notiser.";
+        btn.title = "Klicka här för att slå på ljud och banner-notiser – annars får du inga larm.";
+        if (status) { status.textContent = "← Klicka för att få larm"; status.classList.add("warn"); }
     }
-    const status = $("notifStatus");
-    if (status) status.textContent = "";
 }
 // On load: if the browser already granted permission, turn notifications on
 // automatically so the choice persists across reloads.
@@ -260,6 +286,29 @@ $("enableNotifs").addEventListener("click", enableNotifications);
         });
     }
     syncVolumeUi();
+})();
+
+// Theme: dark (default) / light, remembered across reloads.
+(function initTheme() {
+    const KEY = "nm_theme";
+    const btn = $("themeToggle");
+    const apply = (theme) => {
+        document.documentElement.dataset.theme = theme;
+        if (btn) {
+            btn.textContent = theme === "light" ? "☀️" : "🌙";
+            btn.title = theme === "light" ? "Byt till mörkt tema" : "Byt till ljust tema";
+        }
+    };
+    let saved = "dark";
+    try { saved = localStorage.getItem(KEY) || "dark"; } catch { /* ignore */ }
+    apply(saved === "light" ? "light" : "dark");
+    if (btn) {
+        btn.addEventListener("click", () => {
+            const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+            apply(next);
+            try { localStorage.setItem(KEY, next); } catch { /* ignore */ }
+        });
+    }
 })();
 
 // =====================
@@ -487,23 +536,32 @@ function renderRow(s) {
     label.appendChild(cb);
     label.appendChild(slider);
 
-    const delBtn = document.createElement("button");
-    delBtn.className = "icon-btn danger";
-    delBtn.textContent = "🗑";
-    delBtn.title = "Ta bort";
-    delBtn.addEventListener("click", async () => {
-        if (!confirm(`Ta bort "${s.name}"?`)) return;
-        try {
-            await removeSource(s.id);
-            await render();
-            toast("Källa borttagen", s.name, "🗑");
-        } catch (err) {
-            toast("Fel", err.message, "⚠️");
-        }
-    });
-
     actions.appendChild(label);
-    actions.appendChild(delBtn);
+
+    if (s.is_permanent) {
+        // Core source: no delete button, just a lock so it reads as protected.
+        const lock = document.createElement("span");
+        lock.className = "perm-lock";
+        lock.textContent = "🔒";
+        lock.title = "Permanent källa – kan inte tas bort";
+        actions.appendChild(lock);
+    } else {
+        const delBtn = document.createElement("button");
+        delBtn.className = "icon-btn danger";
+        delBtn.textContent = "🗑";
+        delBtn.title = "Ta bort";
+        delBtn.addEventListener("click", async () => {
+            if (!confirm(`Ta bort "${s.name}"?`)) return;
+            try {
+                await removeSource(s.id);
+                await render();
+                toast("Källa borttagen", s.name, "🗑");
+            } catch (err) {
+                toast("Fel", err.message, "⚠️");
+            }
+        });
+        actions.appendChild(delBtn);
+    }
     tdActions.appendChild(actions);
     tr.appendChild(tdActions);
 
@@ -649,14 +707,18 @@ function renderAlertLog() {
         li.querySelector(".alert-title").textContent = a.name || "Källa";
         const sub = li.querySelector(".alert-sub");
         const text = a.title || "Uppdatering upptäckt";
-        if (a.articleUrl) {
+        // Prefer the specific article URL; fall back to the source's own page so
+        // the alert is always clickable (e.g. Polisen folds items into accordions
+        // without a per-item link).
+        const href = a.articleUrl || a.url;
+        if (href) {
             const link = document.createElement("a");
             link.className = "alert-link";
-            link.href = a.articleUrl;
+            link.href = href;
             link.target = "_blank";
             link.rel = "noreferrer";
             link.textContent = text;
-            link.title = "Öppna artikeln";
+            link.title = a.articleUrl ? "Öppna artikeln" : "Öppna källan";
             sub.appendChild(link);
         } else {
             sub.textContent = text;
@@ -677,18 +739,26 @@ function markAlertsSeen() {
 
 // Only count the feed as "looked at" once the tab is actually visible, then
 // give it a grace period so the green has time to register before it clears.
+// A pending timer is never pushed back by new alerts — otherwise a busy live
+// ticker would keep resetting it and the unread count would never clear while
+// the page is open.
 function scheduleSeen() {
     if (document.hidden) return;
-    clearTimeout(seenTimer);
-    seenTimer = setTimeout(markAlertsSeen, SEEN_GRACE_MS);
+    if (seenTimer) return;
+    seenTimer = setTimeout(() => {
+        seenTimer = null;
+        markAlertsSeen();
+    }, SEEN_GRACE_MS);
 }
 
 function handleAlert(payload, { sound = true } = {}) {
     const added = addAlert(payload);
     if (!added) return;
     if (sound) beep();
-    toast("Uppdatering upptäckt", `${payload.name} har ändrats`, "🚨");
-    notify("Uppdatering upptäckt", `${payload.name} har ändrats`);
+    const title = payload.name || "Källa";
+    const body = payload.latest_item_title || "Uppdatering upptäckt";
+    toast(title, body, "🚨");
+    notify(title, body);
     render();
 }
 

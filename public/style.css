@@ -1,13 +1,14 @@
 :root {
-    --bg: #0b0c10;
-    --bg-2: #0f1117;
-    --surface: #14161e;
-    --surface-2: #1a1d27;
-    --border: #262a36;
-    --border-soft: #1e222c;
-    --text: #eef0f4;
-    --muted: #9298a8;
-    --muted-2: #6b7180;
+    /* Dark — SVT-style neutral near-black (no blue tint), crisp contrast. */
+    --bg: #0d0e10;
+    --bg-2: #121316;
+    --surface: #17181c;
+    --surface-2: #1e2024;
+    --border: #2b2d32;
+    --border-soft: #202226;
+    --text: #f1f2f4;
+    --muted: #9aa0a8;
+    --muted-2: #6d7178;
     --accent: #f5283b;
     --accent-soft: rgba(245, 40, 59, 0.14);
     --accent-strong: #ff4d5e;
@@ -17,9 +18,36 @@
     --radius: 14px;
     --radius-sm: 9px;
     --shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+    --topbar-bg: rgba(11, 12, 16, 0.78);
     --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     --serif: "Spectral", Georgia, "Times New Roman", serif;
     --sans: "Inter", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+}
+
+/* Light theme — SVT-style: crisp white surfaces, near-black text, light-grey
+   page background, soft hairline borders. Clean and flat. */
+:root[data-theme="light"] {
+    --bg: #ffffff;
+    --bg-2: #f3f4f6;
+    --surface: #ffffff;
+    --surface-2: #f5f6f8;
+    --border: #d9dbe0;
+    --border-soft: #e8eaee;
+    --text: #0c0d0f;
+    --muted: #565b63;
+    --muted-2: #868b93;
+    --accent: #f5283b;
+    --accent-soft: rgba(245, 40, 59, 0.09);
+    --accent-strong: #d61f31;
+    --live: #178a4e;
+    --live-soft: rgba(23, 138, 78, 0.12);
+    --amber: #b87600;
+    --shadow: 0 14px 38px rgba(15, 18, 24, 0.10);
+    --topbar-bg: rgba(255, 255, 255, 0.82);
+}
+
+body {
+    transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 * {
@@ -46,10 +74,10 @@ body {
     inset: 0;
     z-index: 0;
     pointer-events: none;
+    /* SVT-style flat background — just a whisper of accent at the very top. */
     background:
-        radial-gradient(900px 500px at 78% -8%, rgba(245, 40, 59, 0.10), transparent 60%),
-        radial-gradient(700px 400px at 8% 0%, rgba(47, 120, 210, 0.08), transparent 55%),
-        linear-gradient(transparent 0, var(--bg) 80%);
+        radial-gradient(1100px 420px at 80% -12%, var(--accent-soft), transparent 60%),
+        var(--bg);
 }
 
 .bg-grid::after {
@@ -60,7 +88,7 @@ body {
         linear-gradient(var(--border-soft) 1px, transparent 1px),
         linear-gradient(90deg, var(--border-soft) 1px, transparent 1px);
     background-size: 46px 46px;
-    opacity: 0.25;
+    opacity: 0.12;
     mask-image: linear-gradient(transparent, #000 30%, transparent 90%);
 }
 
@@ -74,7 +102,7 @@ body {
     justify-content: space-between;
     gap: 16px;
     padding: 14px clamp(16px, 4vw, 40px);
-    background: rgba(11, 12, 16, 0.78);
+    background: var(--topbar-bg);
     backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--border);
 }
@@ -106,6 +134,20 @@ body {
     background: var(--accent-soft);
     padding: 3px 8px;
     border-radius: 999px;
+}
+
+.live-blip {
+    display: inline-block;
+    animation: blink-live 1.4s linear infinite;
+}
+
+@keyframes blink-live {
+    0%, 60% { opacity: 1; }
+    61%, 100% { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .badge-live { animation: none; }
 }
 
 .live-dot {
@@ -229,8 +271,8 @@ body {
 }
 
 .btn:hover {
-    border-color: #353a4a;
-    background: #20242f;
+    border-color: var(--muted-2);
+    background: var(--surface-2);
 }
 
 .btn:active {
@@ -244,9 +286,38 @@ body {
 /* Notifications enabled: subtle green "on" state. */
 .btn.on {
     border-color: rgba(34, 197, 94, 0.55);
-    color: #4ade80;
+    color: var(--live);
     background: rgba(34, 197, 94, 0.08);
 }
+
+/* Notifications not enabled yet: amber call-to-action that gently pulses so it
+   reads as "you need to click this to get alerts". */
+.btn.needs-action {
+    border-color: rgba(245, 191, 66, 0.6);
+    color: var(--amber);
+    background: rgba(245, 191, 66, 0.1);
+    animation: pulse-amber 2.2s infinite;
+}
+
+.btn.needs-action:hover {
+    border-color: rgba(245, 191, 66, 0.9);
+    background: rgba(245, 191, 66, 0.16);
+}
+
+@keyframes pulse-amber {
+    0% { box-shadow: 0 0 0 0 rgba(245, 191, 66, 0.5); }
+    70% { box-shadow: 0 0 0 8px rgba(245, 191, 66, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(245, 191, 66, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .btn.needs-action { animation: none; }
+}
+
+/* Helper text next to the button, colour-coded to the current state. */
+.notif-status.warn { color: var(--amber); }
+.notif-status.ok { color: var(--live); }
+.notif-status.bad { color: var(--accent-strong); }
 
 .btn-accent {
     background: var(--accent);
@@ -569,12 +640,24 @@ tr.flash {
 
 .icon-btn:hover {
     color: var(--text);
-    border-color: #353a4a;
+    border-color: var(--muted-2);
 }
 
 .icon-btn.spinning {
     opacity: 0.6;
     pointer-events: none;
+}
+
+/* Lock shown instead of the trash button on permanent sources. */
+.perm-lock {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    padding: 6px 9px;
+    opacity: 0.5;
+    cursor: default;
+    user-select: none;
 }
 
 /* toggle switch */

@@ -268,6 +268,65 @@ function extractItemsFromHtml(body, sourceUrl, nowIso, selector) {
     return items;
 }
 
+// Many modern live pages (Next.js etc.) render their flow client-side, so the
+// posts aren't in the static DOM — but they ARE embedded as JSON in a
+// <script id="__NEXT_DATA__"> (or similar) blob. We pull the live posts straight
+// from that JSON: any object carrying both a headline (title/headline) and a
+// publish timestamp is a flow post. This is fast (no headless browser) and gives
+// us stable ids + real timestamps. Returns [] when no such JSON is present, so
+// callers fall back to DOM scraping.
+const JSON_TITLE_KEYS = ["title", "headline", "heading"];
+const JSON_DATE_KEYS = ["publishedAt", "firstPublishedAt", "datePublished", "published_at", "date"];
+
+function extractEmbeddedJsonItems(body) {
+    const items = [];
+    const dedupe = new Set();
+
+    let match = body.match(/<script[^>]*id=["']__NEXT_DATA__["'][^>]*>([\s\S]*?)<\/script>/i);
+    if (!match) return items;
+
+    let data;
+    try {
+        data = JSON.parse(match[1]);
+    } catch {
+        return items;
+    }
+
+    const walk = (node) => {
+        if (items.length >= config.maxItemsPerCheck) return;
+        if (Array.isArray(node)) {
+            node.forEach(walk);
+            return;
+        }
+        if (!node || typeof node !== "object") return;
+
+        let title = null;
+        for (const k of JSON_TITLE_KEYS) {
+            if (typeof node[k] === "string" && node[k].trim()) { title = node[k].trim(); break; }
+        }
+        let dateRaw = null;
+        for (const k of JSON_DATE_KEYS) {
+            if (node[k]) { dateRaw = node[k]; break; }
+        }
+        const publishedAt = toIsoOrNull(dateRaw);
+
+        // A flow post = has a headline of reasonable length AND a real timestamp.
+        if (title && publishedAt && title.length >= 8 && title.length <= 240) {
+            const stableId = node.id || node._id || node.uuid || node.guid || null;
+            const itemId = sha256(stableId ? `jid:${stableId}` : `h:${title.toLowerCase()}`);
+            if (!dedupe.has(itemId)) {
+                dedupe.add(itemId);
+                items.push({ item_id: itemId, title, url: null, published_at: publishedAt });
+            }
+        }
+
+        for (const value of Object.values(node)) walk(value);
+    };
+
+    walk(data);
+    return items;
+}
+
 // Live-ticker / "direkt" feeds are short headline posts, often without their
 // own article URL — so the link-based extractor misses them. Here we capture
 // the headline text itself as the item (deduped by text), which is exactly the
@@ -351,7 +410,12 @@ async function checkOneSourceById(id) {
 
         let extractedItems;
         if (source.extract_mode === "ticker") {
-            extractedItems = extractHeadlineItems(body, source.url, now, source.selector);
+            // Prefer flow posts embedded as JSON (client-rendered live pages);
+            // fall back to scraping headline elements from the static DOM.
+            extractedItems = extractEmbeddedJsonItems(body);
+            if (!extractedItems.length) {
+                extractedItems = extractHeadlineItems(body, source.url, now, source.selector);
+            }
         } else if (looksLikeFeed(body, contentType)) {
             extractedItems = extractItemsFromFeed(body, source.feed_url || source.url);
         } else {

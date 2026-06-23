@@ -66,8 +66,8 @@ async function sendPush(payload) {
     if (!webpush) return;
     const subs = await getPushSubscriptions();
     const body = JSON.stringify({
-        title: "Uppdatering upptäckt",
-        body: `${payload.name} har ändrats`,
+        title: payload.name || "Källa",
+        body: payload.latest_item_title || "Uppdatering upptäckt",
         url: payload.url,
     });
     await Promise.allSettled(

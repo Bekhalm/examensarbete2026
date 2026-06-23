@@ -235,6 +235,7 @@ router.delete("/sources/:id", async (req, res) => {
     try {
         const result = await deleteSource(id);
         if (!result.found) return res.status(404).json({ error: "Hittades inte" });
+        if (result.blocked) return res.status(403).json({ error: "Permanent källa – kan inte tas bort" });
         sse.broadcast("sources-changed", { at: new Date().toISOString() });
         res.json(result);
     } catch (err) {
