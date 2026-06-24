@@ -8,8 +8,11 @@ const alerts = loadAlerts(); // [{ name, url, at }]
 const recentAlertKeys = new Map(); // de-dupe local vs SSE alerts
 
 // Personal "space" (a name/initials) so each colleague has their own source
-// list. Shared/core sources are visible to everyone regardless.
+// list. Shared/core sources are visible to everyone regardless. When the
+// password gate is on, the login username IS the space (authProvidedSpace),
+// so no in-app prompt is needed.
 let nmSpace = (localStorage.getItem("nm_space") || "").trim();
+let authProvidedSpace = false;
 
 // fetch() wrapper that tags every API call with the current space.
 function apiFetch(url, opts = {}) {
@@ -872,6 +875,8 @@ window.addEventListener("focus", () => { ensureAudio(); scheduleSeen(); });
 function updateSpaceUi() {
     const label = $("spaceName");
     if (label) label.textContent = nmSpace || "—";
+    const btn = $("spaceBtn");
+    if (btn) btn.title = authProvidedSpace ? `Inloggad som ${nmSpace}` : "Byt arbetsyta (ditt namn)";
 }
 
 function showSpaceGate() {
@@ -911,20 +916,43 @@ function initSpaceControls() {
             applySpace(input ? input.value : "");
         });
     }
-    if (btn) btn.addEventListener("click", showSpaceGate);
+    if (btn) {
+        btn.addEventListener("click", () => {
+            if (authProvidedSpace) {
+                toast("Inloggad", `Du är inloggad som ${nmSpace}. Logga ut i webbläsaren för att byta användare.`, "👤");
+                return;
+            }
+            showSpaceGate();
+        });
+    }
 }
 
 (async function start() {
     initNotifications();
     initSpaceControls();
-    updateSpaceUi();
     renderAlertLog();
     scheduleSeen();
+
+    // When logged in through the password gate, the username is the space —
+    // use it directly and skip the in-app name prompt.
+    let me = { space: "" };
+    try { me = await fetch("/api/me").then((r) => r.json()); } catch { /* ignore */ }
+    if (me && me.space) {
+        authProvidedSpace = true;
+        nmSpace = me.space;
+        updateSpaceUi();
+        await render();
+        connectStream();
+        return;
+    }
+
+    // No login identity (e.g. running locally without a password): fall back to
+    // the in-app name prompt.
+    updateSpaceUi();
     if (nmSpace) {
         await render();
         connectStream();
     } else {
-        // First visit: ask who they are before loading their space.
         showSpaceGate();
     }
 })();

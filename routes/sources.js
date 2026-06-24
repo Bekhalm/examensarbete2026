@@ -21,8 +21,10 @@ const {
     addPushSubscription,
 } = require("../db/database");
 
-// The viewer's personal "space" key, from a header (API calls) or query (SSE).
+// The viewer's personal "space" key. server.js resolves it once (login
+// username when the password gate is on, else the X-Space header/query).
 function getSpace(req) {
+    if (typeof req.space === "string") return req.space;
     return normalizeSpace(req.get("X-Space") || req.query.space || "");
 }
 
@@ -118,6 +120,12 @@ function rateLimitCheck(req, res, next) {
     }
     next();
 }
+
+// Who am I? Lets the UI show the logged-in identity and decide whether the
+// in-app name prompt is needed (only when no login username is available).
+router.get("/me", (req, res) => {
+    res.json({ space: getSpace(req) });
+});
 
 // ---------- sources ----------
 router.get("/sources", async (req, res) => {

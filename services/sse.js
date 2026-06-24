@@ -15,7 +15,9 @@ function handler(req, res) {
     res.write("retry: 3000\n\n");
     res.write(`event: hello\ndata: ${JSON.stringify({ ok: true })}\n\n`);
 
-    const client = { res, space: normalizeSpace(req.query.space) };
+    // server.js resolves req.space from the login username (or X-Space/query).
+    const space = typeof req.space === "string" ? req.space : normalizeSpace(req.query.space);
+    const client = { res, space };
     clients.add(client);
 
     const keepAlive = setInterval(() => {
