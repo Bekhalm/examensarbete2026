@@ -382,7 +382,9 @@ body {
 /* ---------- Panels ---------- */
 .layout {
     display: grid;
-    grid-template-columns: 2.4fr 1fr;
+    /* Alerts ("Larmflöde") is the primary content, so it gets just slightly
+       more room than the sources column — nearly even. */
+    grid-template-columns: 1.4fr 1.5fr;
     gap: 18px;
     align-items: start;
 }
@@ -418,6 +420,15 @@ body {
     letter-spacing: 0.6px;
     text-transform: uppercase;
     color: var(--text);
+}
+
+/* Emphasise the alerts feed, soften the sources sidebar heading. */
+.alerts-panel .panel-head h2 {
+    font-size: 15px;
+}
+
+.sources-panel .panel-head h2 {
+    font-size: 13px;
 }
 
 /* ---------- Add form ---------- */
@@ -725,7 +736,7 @@ tr.flash {
     list-style: none;
     margin: 0;
     padding: 8px;
-    max-height: 560px;
+    max-height: 76vh;
     overflow-y: auto;
 }
 
@@ -1036,7 +1047,31 @@ tr.flash {
 /* ---------- Responsive ---------- */
 @media (max-width: 900px) {
     .layout {
+        /* Stack to one column; alerts come first since it's the primary view. */
         grid-template-columns: 1fr;
+    }
+    .alerts-panel {
+        order: -1;
+    }
+}
+
+@media (max-width: 720px) {
+    .topbar {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    .topbar-right {
+        width: 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    .clock {
+        display: none;
+    }
+    /* Full-width "add source" button below the wrapped inputs. */
+    .add-form .btn-accent {
+        flex: 1 1 100%;
     }
 }
 
@@ -1047,7 +1082,17 @@ tr.flash {
     .hero h1 {
         font-size: 30px;
     }
+    .lede {
+        font-size: 15px;
+    }
     .topbar-right .notif-status {
         display: none;
+    }
+    .vol-slider {
+        width: 78px;
+    }
+    /* Let the feed flow with the page instead of an inner scrollbar on phones. */
+    .alert-log {
+        max-height: none;
     }
 }

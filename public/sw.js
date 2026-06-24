@@ -6,9 +6,8 @@ self.addEventListener("push", (event) => {
         data = {};
     }
     event.waitUntil(
-        self.registration.showNotification(data.title || "Uppdatering upptäckt", {
+        self.registration.showNotification(data.title || "Newsroom Monitor", {
             body: data.body || "",
-            icon: "/icon.png",
             data: { url: data.url || "/" },
         })
     );

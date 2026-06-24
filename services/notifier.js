@@ -66,9 +66,11 @@ async function sendPush(payload) {
     if (!webpush) return;
     const subs = await getPushSubscriptions();
     const body = JSON.stringify({
+        // Channel name as the heading, headline as the message. The browser
+        // appends the site address itself (position is browser-controlled).
         title: payload.name || "Källa",
         body: payload.latest_item_title || "Uppdatering upptäckt",
-        url: payload.url,
+        url: payload.latest_item_url || payload.url,
     });
     await Promise.allSettled(
         subs.map((sub) =>
