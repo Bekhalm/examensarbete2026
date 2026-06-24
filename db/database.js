@@ -74,6 +74,8 @@ async function migrate() {
     await ensureColumn("sources", "created_at", "TEXT");
     // Core sources that must never be removed (trash button hidden, delete blocked).
     await ensureColumn("sources", "is_permanent", "INTEGER DEFAULT 0");
+    // Owner of a personal source (a "space" key). NULL = shared/visible to all.
+    await ensureColumn("sources", "owner", "TEXT");
     await syncPermanentSources();
 
     await run(`
@@ -98,6 +100,8 @@ async function migrate() {
             created_at TEXT NOT NULL
         )
     `);
+    // Which space a push subscription belongs to (NULL = legacy/shared-only).
+    await ensureColumn("push_subscriptions", "space", "TEXT");
 }
 
 // The URL list is authoritative: flag listed sources as permanent and clear the
@@ -115,6 +119,15 @@ function getAllSources() {
     return all("SELECT * FROM sources ORDER BY id");
 }
 
+// Sources visible to a given space: the shared/core ones (owner IS NULL) plus
+// that space's own personal additions.
+function getSourcesForSpace(space) {
+    return all(
+        "SELECT * FROM sources WHERE owner IS NULL OR owner = ? ORDER BY id",
+        [space || ""]
+    );
+}
+
 function getActiveSources() {
     return all("SELECT * FROM sources WHERE is_active = 1");
 }
@@ -127,11 +140,12 @@ async function addSource(fields) {
     const {
         name, url, feed_url = null, selector = null,
         render_mode = "static", extract_mode = "auto", check_interval_sec = null,
+        owner = null,
     } = fields;
     const res = await run(
-        `INSERT INTO sources (name, url, feed_url, selector, render_mode, extract_mode, check_interval_sec, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-        [name, url, feed_url, selector, render_mode, extract_mode, check_interval_sec, new Date().toISOString()]
+        `INSERT INTO sources (name, url, feed_url, selector, render_mode, extract_mode, check_interval_sec, owner, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [name, url, feed_url, selector, render_mode, extract_mode, check_interval_sec, owner || null, new Date().toISOString()]
     );
     return getSourceById(res.lastID);
 }
@@ -141,19 +155,27 @@ async function toggleSource(id, isActive) {
     return { id, is_active: isActive ? 1 : 0, found: res.changes > 0 };
 }
 
-async function deleteSource(id) {
-    const row = await get("SELECT is_permanent FROM sources WHERE id = ?", [id]);
+// A space may only delete its own personal sources. Shared/core sources
+// (owner IS NULL) and other people's sources are protected.
+async function deleteSource(id, space) {
+    const row = await get("SELECT is_permanent, owner FROM sources WHERE id = ?", [id]);
     if (!row) return { id, found: false };
     if (row.is_permanent) return { id, found: true, blocked: true };
+    if (row.owner == null) return { id, found: true, blocked: true };
+    if (row.owner !== (space || "")) return { id, found: true, forbidden: true };
     await run("DELETE FROM seen_items WHERE source_id = ?", [id]);
     const res = await run("DELETE FROM sources WHERE id = ?", [id]);
     return { id, found: res.changes > 0 };
 }
 
-// Permanent sources are never cleared — only the editable ones are removed.
-async function deleteAllSources() {
-    await run("DELETE FROM seen_items WHERE source_id IN (SELECT id FROM sources WHERE is_permanent = 0)");
-    const res = await run("DELETE FROM sources WHERE is_permanent = 0");
+// "Clear all" only removes the calling space's own personal sources — shared
+// and other people's sources are left untouched.
+async function deleteAllSources(space) {
+    await run(
+        "DELETE FROM seen_items WHERE source_id IN (SELECT id FROM sources WHERE owner = ?)",
+        [space || ""]
+    );
+    const res = await run("DELETE FROM sources WHERE owner = ?", [space || ""]);
     return { deleted: res.changes };
 }
 
@@ -224,15 +246,19 @@ async function pruneSeenItems(sourceId, keep) {
 }
 
 // ---------- Push subscriptions ----------
-async function addPushSubscription(subscription) {
+async function addPushSubscription(subscription, space = null) {
     await run(
-        "INSERT OR REPLACE INTO push_subscriptions (endpoint, subscription, created_at) VALUES (?, ?, ?)",
-        [subscription.endpoint, JSON.stringify(subscription), new Date().toISOString()]
+        "INSERT OR REPLACE INTO push_subscriptions (endpoint, subscription, space, created_at) VALUES (?, ?, ?, ?)",
+        [subscription.endpoint, JSON.stringify(subscription), space || null, new Date().toISOString()]
     );
 }
 
-async function getPushSubscriptions() {
-    const rows = await all("SELECT subscription FROM push_subscriptions");
+// owner === null/undefined => a shared source changed, notify everyone.
+// owner === "<space>"      => a personal source changed, notify only that space.
+async function getPushSubscriptions(owner) {
+    const rows = owner
+        ? await all("SELECT subscription FROM push_subscriptions WHERE space = ?", [owner])
+        : await all("SELECT subscription FROM push_subscriptions");
     return rows.map((r) => {
         try {
             return JSON.parse(r.subscription);
@@ -250,6 +276,7 @@ module.exports = {
     db,
     migrate,
     getAllSources,
+    getSourcesForSpace,
     getActiveSources,
     getSourceById,
     addSource,

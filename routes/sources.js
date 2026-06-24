@@ -6,11 +6,12 @@ const router = express.Router();
 const config = require("../lib/config");
 const logger = require("../lib/logger");
 const { assertSafeUrl } = require("../lib/safeUrl");
+const { normalizeSpace } = require("../lib/space");
 const { discoverFeeds } = require("../services/feeds");
 const notifier = require("../services/notifier");
 const sse = require("../services/sse");
 const {
-    getAllSources,
+    getSourcesForSpace,
     getSourceById,
     addSource,
     toggleSource,
@@ -19,6 +20,16 @@ const {
     getHistory,
     addPushSubscription,
 } = require("../db/database");
+
+// The viewer's personal "space" key, from a header (API calls) or query (SSE).
+function getSpace(req) {
+    return normalizeSpace(req.get("X-Space") || req.query.space || "");
+}
+
+// A source is visible to a space if it's shared (owner null) or owned by it.
+function visibleToSpace(source, space) {
+    return source && (source.owner == null || source.owner === space);
+}
 const { checkOneSourceById } = require("../services/changeDetector");
 const { effectiveIntervalMs } = require("../scheduler/scheduler");
 
@@ -109,9 +120,9 @@ function rateLimitCheck(req, res, next) {
 }
 
 // ---------- sources ----------
-router.get("/sources", async (_req, res) => {
+router.get("/sources", async (req, res) => {
     try {
-        const sources = await getAllSources();
+        const sources = await getSourcesForSpace(getSpace(req));
         res.json(sources.map(withTiming));
     } catch (err) {
         logger.error({ err: err.message }, "list sources failed");
@@ -123,7 +134,9 @@ router.get("/sources/:id", async (req, res) => {
     const id = parseId(req, res);
     if (id === null) return;
     const source = await getSourceById(id);
-    if (!source) return res.status(404).json({ error: "Hittades inte" });
+    if (!source || !visibleToSpace(source, getSpace(req))) {
+        return res.status(404).json({ error: "Hittades inte" });
+    }
     res.json(source);
 });
 
@@ -131,6 +144,10 @@ router.get("/sources/:id/history", async (req, res) => {
     const id = parseId(req, res);
     if (id === null) return;
     try {
+        const source = await getSourceById(id);
+        if (!source || !visibleToSpace(source, getSpace(req))) {
+            return res.status(404).json({ error: "Hittades inte" });
+        }
         res.json(await getHistory(id, 50));
     } catch (err) {
         res.status(500).json({ error: "Databasfel" });
@@ -138,6 +155,11 @@ router.get("/sources/:id/history", async (req, res) => {
 });
 
 router.post("/sources", async (req, res) => {
+    const space = getSpace(req);
+    if (!space) {
+        return res.status(400).json({ error: "Ange ditt namn först för att lägga till egna källor" });
+    }
+
     let data;
     try {
         data = addSchema.parse(req.body);
@@ -176,6 +198,7 @@ router.post("/sources", async (req, res) => {
             render_mode: data.render_mode || "static",
             extract_mode: extractMode,
             check_interval_sec: data.check_interval_sec || null,
+            owner: space,
         });
         sse.broadcast("sources-changed", { at: new Date().toISOString() });
         res.status(201).json(source);
@@ -209,6 +232,16 @@ router.post("/sources/:id/toggle", async (req, res) => {
         return validationError(res, err);
     }
     try {
+        const space = getSpace(req);
+        const existing = await getSourceById(id);
+        if (!existing || !visibleToSpace(existing, space)) {
+            return res.status(404).json({ error: "Hittades inte" });
+        }
+        // Only the owner may pause/resume a personal source; shared sources are
+        // read-only so no one can pause the newsroom's core watch for everyone.
+        if (existing.owner !== space) {
+            return res.status(403).json({ error: "Delad källa – kan inte ändras" });
+        }
         const result = await toggleSource(id, data.isActive);
         if (!result.found) return res.status(404).json({ error: "Hittades inte" });
         sse.broadcast("sources-changed", { at: new Date().toISOString() });
@@ -218,9 +251,9 @@ router.post("/sources/:id/toggle", async (req, res) => {
     }
 });
 
-router.delete("/sources", async (_req, res) => {
+router.delete("/sources", async (req, res) => {
     try {
-        const result = await deleteAllSources();
+        const result = await deleteAllSources(getSpace(req));
         sse.broadcast("sources-changed", { at: new Date().toISOString() });
         res.json(result);
     } catch (err) {
@@ -233,9 +266,10 @@ router.delete("/sources/:id", async (req, res) => {
     const id = parseId(req, res);
     if (id === null) return;
     try {
-        const result = await deleteSource(id);
+        const result = await deleteSource(id, getSpace(req));
         if (!result.found) return res.status(404).json({ error: "Hittades inte" });
-        if (result.blocked) return res.status(403).json({ error: "Permanent källa – kan inte tas bort" });
+        if (result.blocked) return res.status(403).json({ error: "Delad källa – kan inte tas bort" });
+        if (result.forbidden) return res.status(403).json({ error: "Tillhör någon annan – kan inte tas bort" });
         sse.broadcast("sources-changed", { at: new Date().toISOString() });
         res.json(result);
     } catch (err) {
@@ -247,6 +281,10 @@ router.post("/sources/:id/check", rateLimitCheck, async (req, res) => {
     const id = parseId(req, res);
     if (id === null) return;
     try {
+        const existing = await getSourceById(id);
+        if (!existing || !visibleToSpace(existing, getSpace(req))) {
+            return res.status(404).json({ error: "Hittades inte" });
+        }
         const result = await checkOneSourceById(id);
         if (!result.ok) {
             if (result.reason === "not_found") return res.status(404).json({ error: "Hittades inte" });
@@ -294,7 +332,7 @@ router.post("/push/subscribe", async (req, res) => {
         return validationError(res, err);
     }
     try {
-        await addPushSubscription(data.subscription);
+        await addPushSubscription(data.subscription, getSpace(req));
         res.status(201).json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: "Kunde inte spara prenumeration" });

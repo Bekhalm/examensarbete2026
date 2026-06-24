@@ -7,6 +7,17 @@ let latestAlertSourceId = null;
 const alerts = loadAlerts(); // [{ name, url, at }]
 const recentAlertKeys = new Map(); // de-dupe local vs SSE alerts
 
+// Personal "space" (a name/initials) so each colleague has their own source
+// list. Shared/core sources are visible to everyone regardless.
+let nmSpace = (localStorage.getItem("nm_space") || "").trim();
+
+// fetch() wrapper that tags every API call with the current space.
+function apiFetch(url, opts = {}) {
+    const headers = { ...(opts.headers || {}) };
+    if (nmSpace) headers["X-Space"] = nmSpace;
+    return fetch(url, { ...opts, headers });
+}
+
 // =====================
 // Helpers
 // =====================
@@ -335,7 +346,7 @@ async function registerPush() {
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(info.publicKey),
         });
-        await fetch("/api/push/subscribe", {
+        await apiFetch("/api/push/subscribe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ subscription: sub }),
@@ -367,18 +378,18 @@ function toast(title, body, emoji = "🚨") {
 // API
 // =====================
 async function fetchSources() {
-    const res = await fetch("/api/sources");
+    const res = await apiFetch("/api/sources");
     if (!res.ok) throw new Error("Kunde inte hämta källor");
     return res.json();
 }
 async function toggleSource(id, isActive) {
-    const res = await fetch(`/api/sources/${id}/toggle`, {
+    const res = await apiFetch(`/api/sources/${id}/toggle`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Kunde inte ändra källa");
 }
 async function addSource(payload) {
-    const res = await fetch("/api/sources", {
+    const res = await apiFetch("/api/sources", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -388,11 +399,11 @@ async function addSource(payload) {
     return res.json();
 }
 async function removeSource(id) {
-    const res = await fetch(`/api/sources/${id}`, { method: "DELETE" });
+    const res = await apiFetch(`/api/sources/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Kunde inte ta bort källa");
 }
 async function fetchHistory(id) {
-    const res = await fetch(`/api/sources/${id}/history`);
+    const res = await apiFetch(`/api/sources/${id}/history`);
     if (!res.ok) throw new Error("Kunde inte hämta historik");
     return res.json();
 }
@@ -771,8 +782,11 @@ function setLive(connected) {
     badge.textContent = connected ? "● LIVE" : "○ OFFLINE";
     badge.classList.toggle("offline", !connected);
 }
+let streamConn = null;
 function connectStream() {
-    const es = new EventSource("/api/stream");
+    if (streamConn) { try { streamConn.close(); } catch { /* ignore */ } }
+    const es = new EventSource(`/api/stream?space=${encodeURIComponent(nmSpace)}`);
+    streamConn = es;
     es.addEventListener("hello", () => setLive(true));
     es.addEventListener("alert", (e) => {
         try {
@@ -810,7 +824,7 @@ $("addForm").addEventListener("submit", async (e) => {
     }
 });
 async function clearAllSources() {
-    const res = await fetch("/api/sources", { method: "DELETE" });
+    const res = await apiFetch("/api/sources", { method: "DELETE" });
     if (!res.ok) throw new Error("Kunde inte rensa källor");
     return res.json();
 }
@@ -852,10 +866,65 @@ document.addEventListener("visibilitychange", () => {
 });
 window.addEventListener("focus", () => { ensureAudio(); scheduleSeen(); });
 
-(async function start() {
-    initNotifications();
-    renderAlertLog();
-    scheduleSeen();
+// =====================
+// Personal space (name gate)
+// =====================
+function updateSpaceUi() {
+    const label = $("spaceName");
+    if (label) label.textContent = nmSpace || "—";
+}
+
+function showSpaceGate() {
+    const gate = $("spaceGate");
+    const input = $("spaceInput");
+    if (!gate) return;
+    gate.hidden = false;
+    if (input) {
+        input.value = nmSpace;
+        setTimeout(() => input.focus(), 50);
+    }
+}
+
+async function applySpace(name) {
+    const clean = String(name || "").trim().slice(0, 60);
+    if (!clean) return false;
+    const changed = clean.toLowerCase() !== nmSpace.toLowerCase();
+    nmSpace = clean;
+    try { localStorage.setItem("nm_space", nmSpace); } catch { /* ignore */ }
+    updateSpaceUi();
+    const gate = $("spaceGate");
+    if (gate) gate.hidden = true;
+    // (Re)load this space's view and live connection.
     await render();
     connectStream();
+    if (changed && notificationsEnabled) registerPush();
+    return true;
+}
+
+function initSpaceControls() {
+    const form = $("spaceForm");
+    const input = $("spaceInput");
+    const btn = $("spaceBtn");
+    if (form) {
+        form.addEventListener("submit", (e) => {
+            e.preventDefault();
+            applySpace(input ? input.value : "");
+        });
+    }
+    if (btn) btn.addEventListener("click", showSpaceGate);
+}
+
+(async function start() {
+    initNotifications();
+    initSpaceControls();
+    updateSpaceUi();
+    renderAlertLog();
+    scheduleSeen();
+    if (nmSpace) {
+        await render();
+        connectStream();
+    } else {
+        // First visit: ask who they are before loading their space.
+        showSpaceGate();
+    }
 })();

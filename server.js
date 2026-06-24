@@ -1,4 +1,5 @@
 const path = require("path");
+const crypto = require("crypto");
 const express = require("express");
 
 const config = require("./lib/config");
@@ -12,6 +13,29 @@ const { startScheduler } = require("./scheduler/scheduler");
 
 const app = express();
 app.set("trust proxy", true);
+
+// Optional shared-password gate (HTTP Basic Auth). Enabled when ACCESS_PASSWORD
+// is set. Protects every route except /health so uptime checks still work.
+// Any username is accepted; only the password must match.
+function passwordMatches(supplied) {
+    const a = Buffer.from(supplied);
+    const b = Buffer.from(config.accessPassword);
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+if (config.accessPassword) {
+    app.use((req, res, next) => {
+        if (req.path === "/health") return next();
+        const [scheme, encoded] = (req.headers.authorization || "").split(" ");
+        if (scheme === "Basic" && encoded) {
+            const decoded = Buffer.from(encoded, "base64").toString("utf8");
+            const supplied = decoded.slice(decoded.indexOf(":") + 1);
+            if (passwordMatches(supplied)) return next();
+        }
+        res.set("WWW-Authenticate", 'Basic realm="Newsroom Monitor", charset="UTF-8"');
+        return res.status(401).send("Lösenord krävs.");
+    });
+}
+
 app.use(express.json({ limit: "1mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 

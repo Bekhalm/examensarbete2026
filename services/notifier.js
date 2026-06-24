@@ -64,7 +64,8 @@ async function sendEmail(payload) {
 
 async function sendPush(payload) {
     if (!webpush) return;
-    const subs = await getPushSubscriptions();
+    // Shared source (owner null) -> everyone; personal source -> only its owner.
+    const subs = await getPushSubscriptions(payload.owner || null);
     const body = JSON.stringify({
         // Channel name as the heading, headline as the message. The browser
         // appends the site address itself (position is browser-controlled).
@@ -90,6 +91,9 @@ function notifyChange(source, info = {}) {
         id: source.id,
         name: source.name,
         url: source.url,
+        // null = shared/core source (everyone is alerted); otherwise only the
+        // owning space sees it.
+        owner: source.owner || null,
         new_items_count: info.new_items_count || 0,
         latest_item_title: info.latest_item_title || null,
         latest_item_url: info.latest_item_url || null,
@@ -97,8 +101,8 @@ function notifyChange(source, info = {}) {
         at: new Date().toISOString(),
     };
 
-    // Instant in-app delivery.
-    sse.broadcast("alert", payload);
+    // Instant in-app delivery, scoped to the source's owner.
+    sse.broadcastAlert(payload);
 
     // Out-of-band channels (fire and forget).
     sendWebhook(payload);
