@@ -37,21 +37,26 @@
                 <span class="bell">🔔</span> Aktivera notiser
             </button>
             <span class="notif-status" id="notifStatus"></span>
+            <div class="user-box" id="userBox" hidden>
+                <button class="user-chip" id="userChip" title="Klicka för att logga ut"></button>
+            </div>
         </div>
     </header>
 
     <main class="container">
         <section class="hero">
             <p class="lede">
-                Lägg till sajterna du följer, du larmas när något nytt publiceras.
+                Lägg till sajterna du bevakar – du larmas så fort något nytt publiceras.
             </p>
         </section>
 
         <div class="layout">
             <section class="panel sources-panel">
                 <div class="panel-head">
-                    <h2>Bevakade källor</h2>
-                    <button class="btn btn-mini danger" id="clearSources" title="Ta bort alla källor" hidden>Rensa alla</button>
+                    <div class="panel-head-text">
+                        <h2>Bevakade källor</h2>
+                        <p class="panel-sub">Sajter du följer – lägg till en webbadress eller ett RSS-flöde.</p>
+                    </div>
                 </div>
 
                 <form id="addForm" class="add-form" autocomplete="off">
@@ -61,9 +66,16 @@
                     <div class="field field-grow">
                         <input id="url" type="text" inputmode="url" placeholder="URL eller RSS (https://…)" required />
                     </div>
+                    <div class="field" id="addGroupField" hidden>
+                        <select id="addGroup" class="add-group-select" title="Lägg källan i en mapp"></select>
+                    </div>
                     <button type="submit" class="btn btn-accent">+ Lägg till källa</button>
                 </form>
                 <p class="form-error" id="formError" hidden></p>
+                <div class="sources-hint-row">
+                    <p class="sources-hint">Gruppera dina källor i mappar.</p>
+                    <button class="btn btn-mini" id="newGroupBtn" title="Skapa en ny mapp att gruppera källor i">+ Ny mapp</button>
+                </div>
 
                 <div id="sourcesWrap" class="sources-wrap">
                     <div class="empty" id="emptyState">
@@ -86,7 +98,10 @@
 
             <aside class="panel alerts-panel">
                 <div class="panel-head">
-                    <h2>Larmflöde</h2>
+                    <div class="panel-head-text">
+                        <h2>Larmflöde</h2>
+                        <p class="panel-sub">Nya publiceringar visas här direkt – senast överst.</p>
+                    </div>
                     <span class="live-dot small" title="Live"></span>
                 </div>
                 <ul class="alert-log" id="alertLog">
@@ -112,6 +127,63 @@
     </div>
 
     <div id="toastWrap" class="toast-wrap" aria-live="polite"></div>
+
+    <div id="loginGate" class="login-gate" hidden>
+        <div class="login-card">
+            <div class="login-brand">
+                <span class="wordmark">News<strong>Monitor</strong></span>
+            </div>
+            <p class="login-lede">Logga in för att se din bevakning.</p>
+            <form id="loginForm" autocomplete="off">
+                <label class="login-label" for="loginUser">Användarnamn</label>
+                <input id="loginUser" class="login-input" placeholder="t.ex. anbe01" maxlength="40" required />
+                <label class="login-label" for="loginPass">Lösenord</label>
+                <input id="loginPass" class="login-input" type="password" placeholder="Lösenord" required />
+                <p class="form-error" id="loginError" hidden></p>
+                <button type="submit" class="btn btn-accent login-submit">Logga in</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="groupModal" class="login-gate" hidden>
+        <div class="login-card">
+            <h3 class="login-title" id="groupModalTitle">Ny mapp</h3>
+            <p class="login-lede">Gruppera dina källor och tysta notiser per mapp.</p>
+            <form id="groupForm" autocomplete="off">
+                <label class="login-label" for="groupName">Namn på mapp</label>
+                <input id="groupName" class="login-input" placeholder="t.ex. Skåne, Brott Stockholm" maxlength="60"
+                    required />
+                <p class="form-error" id="groupModalError" hidden></p>
+                <div class="login-actions">
+                    <button type="button" class="btn btn-ghost" id="groupCancel">Avbryt</button>
+                    <button type="submit" class="btn btn-accent">Spara</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="confirmModal" class="login-gate" hidden>
+        <div class="login-card">
+            <h3 class="login-title" id="confirmTitle">Bekräfta</h3>
+            <p class="login-lede confirm-text" id="confirmText"></p>
+            <div class="login-actions">
+                <button type="button" class="btn btn-ghost" id="confirmCancel">Avbryt</button>
+                <button type="button" class="btn btn-accent" id="confirmOk">Ta bort</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addSourcesModal" class="login-gate" hidden>
+        <div class="login-card">
+            <h3 class="login-title" id="addSourcesTitle">Lägg till källor</h3>
+            <p class="login-lede">Välj vilka källor som ska ligga i mappen. Du kan ändra detta när som helst.</p>
+            <div class="pick-list" id="addSourcesList"></div>
+            <div class="login-actions">
+                <button type="button" class="btn btn-ghost" id="addSourcesSkip">Hoppa över</button>
+                <button type="button" class="btn btn-accent" id="addSourcesSave">Lägg till</button>
+            </div>
+        </div>
+    </div>
 
     <script src="/app.js" defer></script>
 </body>

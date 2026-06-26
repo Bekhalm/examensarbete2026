@@ -4,8 +4,21 @@
 let notificationsEnabled = false;
 let isRendering = false;
 let latestAlertSourceId = null;
+let currentUser = null; // logged-in display name (null when not logged in)
+let authRequired = false; // server has a password configured
 const alerts = loadAlerts(); // [{ name, url, at }]
 const recentAlertKeys = new Map(); // de-dupe local vs SSE alerts
+
+// "Bevakningar": the current user's personal source groups. mutedSourceIds is
+// derived from them (sources filed into a notify=0 group) and is used to hide
+// those larm from the feed instantly when a group is muted.
+let groups = [];
+let groupsById = new Map();
+let mutedSourceIds = new Set();
+
+// Drag-and-drop: which source is being dragged and which bevakning it came from.
+let dragSourceId = null;
+let dragSourceGroup = null;
 
 // =====================
 // Helpers
@@ -399,19 +412,29 @@ function toast(title, body, emoji = "🚨") {
 // =====================
 // API
 // =====================
+// Wrap fetch so an expired/missing session (401) drops the user back to the
+// login screen instead of silently failing.
+async function apiFetch(path, opts) {
+    const res = await fetch(path, opts);
+    if (res.status === 401) {
+        showLogin();
+        throw new Error("Inte inloggad");
+    }
+    return res;
+}
 async function fetchSources() {
-    const res = await fetch("/api/sources");
+    const res = await apiFetch("/api/sources");
     if (!res.ok) throw new Error("Kunde inte hämta källor");
     return res.json();
 }
 async function toggleSource(id, isActive) {
-    const res = await fetch(`/api/sources/${id}/toggle`, {
+    const res = await apiFetch(`/api/sources/${id}/toggle`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Kunde inte ändra källa");
 }
 async function addSource(payload) {
-    const res = await fetch("/api/sources", {
+    const res = await apiFetch("/api/sources", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -421,13 +444,42 @@ async function addSource(payload) {
     return res.json();
 }
 async function removeSource(id) {
-    const res = await fetch(`/api/sources/${id}`, { method: "DELETE" });
-    if (!res.ok) throw new Error("Kunde inte ta bort källa");
+    const res = await apiFetch(`/api/sources/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Kunde inte ta bort källa");
 }
 async function fetchHistory(id) {
-    const res = await fetch(`/api/sources/${id}/history`);
+    const res = await apiFetch(`/api/sources/${id}/history`);
     if (!res.ok) throw new Error("Kunde inte hämta historik");
     return res.json();
+}
+async function fetchGroups() {
+    const res = await apiFetch("/api/groups");
+    if (!res.ok) throw new Error("Kunde inte hämta mappar");
+    return res.json();
+}
+async function createGroup(name) {
+    const res = await apiFetch("/api/groups", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Kunde inte skapa mapp");
+    return res.json();
+}
+async function patchGroup(id, fields) {
+    const res = await apiFetch(`/api/groups/${id}`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(fields),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Kunde inte uppdatera mapp");
+}
+async function deleteGroup(id) {
+    const res = await apiFetch(`/api/groups/${id}`, { method: "DELETE" });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Kunde inte ta bort mapp");
+    return res.json().catch(() => ({}));
+}
+async function assignSourceGroup(id, groupId) {
+    const res = await apiFetch(`/api/sources/${id}/group`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ groupId }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Kunde inte gruppera källa");
 }
 
 // =====================
@@ -504,16 +556,87 @@ function timeCell(iso, tooltipLabel) {
     return td;
 }
 
+// ----- Drag-and-drop between bevakningar -----
+function clearDropHighlight() {
+    const body = $("sourcesBody");
+    if (body) body.querySelectorAll(".drop-target").forEach((el) => el.classList.remove("drop-target"));
+}
+// Highlight every row of the bevakning currently under the cursor.
+function highlightGroup(gid) {
+    clearDropHighlight();
+    const body = $("sourcesBody");
+    if (!body) return;
+    body.querySelectorAll(`tr[data-group-id="${CSS.escape(gid)}"]`).forEach((tr) => tr.classList.add("drop-target"));
+}
+let dropZoneReady = false;
+function setupDropZone() {
+    if (dropZoneReady) return;
+    const body = $("sourcesBody");
+    if (!body) return;
+    dropZoneReady = true;
+
+    body.addEventListener("dragover", (e) => {
+        if (dragSourceId == null) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "move";
+        const row = e.target.closest("tr");
+        if (!row || row.dataset.groupId === undefined) { clearDropHighlight(); return; }
+        highlightGroup(row.dataset.groupId || "");
+    });
+    body.addEventListener("drop", async (e) => {
+        if (dragSourceId == null) return;
+        e.preventDefault();
+        const row = e.target.closest("tr");
+        clearDropHighlight();
+        if (!row || row.dataset.groupId === undefined) return;
+        const targetGid = row.dataset.groupId || "";
+        const sid = dragSourceId;
+        if ((dragSourceGroup || "") === targetGid) return; // dropped where it already was
+        try {
+            await assignSourceGroup(sid, targetGid ? Number(targetGid) : null);
+            await render();
+        } catch (err) {
+            toast("Fel", err.message, "⚠️");
+        }
+    });
+}
+
 function renderRow(s) {
     const tr = document.createElement("tr");
     if (s.is_active === 0) tr.classList.add("inactive");
     if (latestAlertSourceId === s.id) tr.classList.add("flash");
+    // Tag the row so drag-and-drop knows which bevakning it currently sits in.
+    tr.dataset.sourceId = String(s.id);
+    tr.dataset.groupId = s.group_id != null ? String(s.group_id) : "";
 
     tr.appendChild(statusCell(s));
 
     const tdSource = document.createElement("td");
     const cell = document.createElement("div");
     cell.className = "source-cell";
+    // Drag handle (only useful once there are bevakningar to drag between).
+    if (groups.length) {
+        const handle = document.createElement("span");
+        handle.className = "drag-handle";
+        handle.textContent = "⠿";
+        handle.title = "Dra för att flytta till en annan mapp";
+        handle.draggable = true;
+        handle.addEventListener("dragstart", (e) => {
+            dragSourceId = s.id;
+            dragSourceGroup = tr.dataset.groupId || "";
+            e.dataTransfer.effectAllowed = "move";
+            e.dataTransfer.setData("text/plain", String(s.id));
+            try { e.dataTransfer.setDragImage(tr, 12, 12); } catch { /* ignore */ }
+            tr.classList.add("dragging");
+        });
+        handle.addEventListener("dragend", () => {
+            dragSourceId = null;
+            dragSourceGroup = null;
+            tr.classList.remove("dragging");
+            clearDropHighlight();
+        });
+        cell.appendChild(handle);
+    }
     cell.appendChild(buildFavicon(s.url, s.name));
     const meta = document.createElement("div");
     meta.className = "source-meta";
@@ -537,6 +660,33 @@ function renderRow(s) {
     meta.appendChild(nm);
     meta.appendChild(a);
     meta.appendChild(hb);
+    // Let the user file this source into one of their bevakningar. Only shown
+    // once they actually have a group to file it into.
+    if (groups.length) {
+        const pick = document.createElement("div");
+        pick.className = "group-pick";
+        const lbl = document.createElement("span");
+        lbl.className = "group-pick-label";
+        lbl.textContent = "🗂 Mapp:";
+        const gsel = document.createElement("select");
+        gsel.className = "group-select";
+        gsel.title = "Välj vilken mapp källan ligger i";
+        gsel.appendChild(new Option("Ingen", ""));
+        for (const g of groups) gsel.appendChild(new Option(g.name, String(g.id)));
+        gsel.value = s.group_id != null ? String(s.group_id) : "";
+        gsel.addEventListener("change", async () => {
+            gsel.disabled = true;
+            try {
+                await assignSourceGroup(s.id, gsel.value ? Number(gsel.value) : null);
+                await render();
+            } catch (err) {
+                toast("Fel", err.message, "⚠️");
+                gsel.disabled = false;
+            }
+        });
+        pick.append(lbl, gsel);
+        meta.appendChild(pick);
+    }
     cell.appendChild(meta);
     tdSource.appendChild(cell);
     tr.appendChild(tdSource);
@@ -549,7 +699,7 @@ function renderRow(s) {
 
     const label = document.createElement("label");
     label.className = "switch";
-    label.title = s.is_active === 1 ? "Pausa bevakning" : "Aktivera bevakning";
+    label.title = s.is_active === 1 ? "Pausa kontroll av källan" : "Återuppta kontroll av källan";
     const cb = document.createElement("input");
     cb.type = "checkbox";
     cb.checked = s.is_active === 1;
@@ -582,9 +732,14 @@ function renderRow(s) {
         const delBtn = document.createElement("button");
         delBtn.className = "icon-btn danger";
         delBtn.textContent = "🗑";
-        delBtn.title = "Ta bort";
+        delBtn.title = "Ta bort källa";
         delBtn.addEventListener("click", async () => {
-            if (!confirm(`Ta bort "${s.name}"?`)) return;
+            const ok = await confirmDialog({
+                title: "Ta bort källa",
+                message: `Vill du ta bort "${s.name}"? Källan och dess historik försvinner.`,
+                okLabel: "Ta bort källa",
+            });
+            if (!ok) return;
             try {
                 await removeSource(s.id);
                 await render();
@@ -601,33 +756,188 @@ function renderRow(s) {
     return tr;
 }
 
+function groupHeaderRow(g) {
+    const tr = document.createElement("tr");
+    tr.className = "group-row" + (g.notify ? "" : " muted");
+    tr.dataset.groupId = String(g.id);
+    const td = document.createElement("td");
+    td.colSpan = 4;
+    const wrap = document.createElement("div");
+    wrap.className = "group-head";
+
+    const icon = document.createElement("span");
+    icon.className = "group-icon";
+    icon.textContent = "🗂";
+
+    const name = document.createElement("span");
+    name.className = "group-name";
+    name.textContent = g.name;
+
+    const spacer = document.createElement("span");
+    spacer.className = "group-spacer";
+
+    // Clearly labelled on/off button — the main action for a bevakning.
+    const toggle = document.createElement("button");
+    toggle.className = "group-toggle" + (g.notify ? " on" : " off");
+    toggle.innerHTML = `<span class="gt-ico">${g.notify ? "🔔" : "🔕"}</span><span class="gt-text">${g.notify ? "Notiser på" : "Tystad"}</span>`;
+    toggle.title = g.notify
+        ? "Notiser på – klicka för att tysta hela mappen (du slutar få larm härifrån)"
+        : "Tystad – klicka för att börja få larm härifrån igen";
+    toggle.addEventListener("click", async () => {
+        toggle.disabled = true;
+        try {
+            await patchGroup(g.id, { notify: !g.notify });
+            await render();
+        } catch (err) {
+            toast("Fel", err.message, "⚠️");
+            toggle.disabled = false;
+        }
+    });
+
+    const rename = document.createElement("button");
+    rename.className = "group-action";
+    rename.textContent = "✏️";
+    rename.title = "Byt namn på mappen";
+    rename.addEventListener("click", async () => {
+        const next = await openGroupModal({ title: "Byt namn på mapp", value: g.name });
+        if (next == null || next === g.name) return;
+        try {
+            await patchGroup(g.id, { name: next });
+            await render();
+        } catch (err) {
+            toast("Fel", err.message, "⚠️");
+        }
+    });
+
+    const del = document.createElement("button");
+    del.className = "group-action danger";
+    del.textContent = "🗑";
+    del.title = "Ta bort mappen och dess källor";
+    del.addEventListener("click", async () => {
+        const ok = await confirmDialog({
+            title: "Ta bort mapp",
+            message: `Vill du ta bort mappen "${g.name}"?\n\nDina egna källor i mappen tas bort. Permanenta källor tas inte bort – de flyttas ut ur mappen.`,
+            okLabel: "Ta bort mapp",
+        });
+        if (!ok) return;
+        try {
+            const res = await deleteGroup(g.id);
+            await render();
+            const n = res && res.deletedSources ? res.deletedSources : 0;
+            const detail = n ? `${g.name} · ${n} ${n === 1 ? "källa" : "källor"} borttagna` : g.name;
+            toast("Mapp borttagen", detail, "🗑");
+        } catch (err) {
+            toast("Fel", err.message, "⚠️");
+        }
+    });
+
+    wrap.append(icon, name, spacer, toggle, rename, del);
+    td.appendChild(wrap);
+    tr.appendChild(td);
+    return tr;
+}
+
+function ungroupedHeaderRow() {
+    const tr = document.createElement("tr");
+    tr.className = "group-row ungrouped";
+    tr.dataset.groupId = "";
+    const td = document.createElement("td");
+    td.colSpan = 4;
+    const wrap = document.createElement("div");
+    wrap.className = "group-head";
+    const name = document.createElement("span");
+    name.className = "group-name muted";
+    name.textContent = "Permanenta källor";
+    wrap.append(name);
+    td.appendChild(wrap);
+    tr.appendChild(td);
+    return tr;
+}
+
+function renderSources(sources) {
+    const tableEl = $("sourcesTable");
+    const emptyEl = $("emptyState");
+    const body = $("sourcesBody");
+    if (!sources.length) {
+        tableEl.hidden = true;
+        emptyEl.hidden = false;
+        return;
+    }
+    emptyEl.hidden = true;
+    tableEl.hidden = false;
+    setupDropZone();
+    body.innerHTML = "";
+
+    const sorted = sources
+        .slice()
+        .sort((a, b) => (b.last_notified_at || "").localeCompare(a.last_notified_at || ""));
+
+    // No groups yet: keep the original flat list.
+    if (!groups.length) {
+        sorted.forEach((s) => body.appendChild(renderRow(s)));
+        return;
+    }
+
+    const buckets = new Map(groups.map((g) => [g.id, []]));
+    const ungrouped = [];
+    for (const s of sorted) {
+        if (s.group_id != null && buckets.has(s.group_id)) buckets.get(s.group_id).push(s);
+        else ungrouped.push(s);
+    }
+    for (const g of groups) {
+        body.appendChild(groupHeaderRow(g));
+        for (const s of buckets.get(g.id)) {
+            const row = renderRow(s);
+            if (!g.notify) row.classList.add("in-muted-group");
+            body.appendChild(row);
+        }
+    }
+    if (ungrouped.length) {
+        body.appendChild(ungroupedHeaderRow());
+        for (const s of ungrouped) body.appendChild(renderRow(s));
+    }
+}
+
 async function render() {
     if (isRendering) return;
     isRendering = true;
     try {
-        const sources = await fetchSources();
-        const tableEl = $("sourcesTable");
-        const emptyEl = $("emptyState");
-        const body = $("sourcesBody");
-        const clearBtn = $("clearSources");
-        if (clearBtn) clearBtn.hidden = sources.length === 0;
-        if (!sources.length) {
-            tableEl.hidden = true;
-            emptyEl.hidden = false;
-        } else {
-            emptyEl.hidden = true;
-            tableEl.hidden = false;
-            body.innerHTML = "";
-            sources
-                .slice()
-                .sort((a, b) => (b.last_notified_at || "").localeCompare(a.last_notified_at || ""))
-                .forEach((s) => body.appendChild(renderRow(s)));
+        const [sources, grps] = await Promise.all([fetchSources(), fetchGroups()]);
+        groups = Array.isArray(grps) ? grps : [];
+        groupsById = new Map(groups.map((g) => [g.id, g]));
+        mutedSourceIds = new Set();
+        for (const s of sources) {
+            if (s.group_id != null) {
+                const g = groupsById.get(s.group_id);
+                if (g && !g.notify) mutedSourceIds.add(s.id);
+            }
         }
+        renderSources(sources);
+        populateAddGroupSelect();
+        // Reflect mute changes in the feed immediately.
+        renderAlertLog();
     } catch (err) {
         console.error("Render error:", err);
     } finally {
         isRendering = false;
     }
+}
+
+// Keep the "Lägg till källa"-form's map picker in sync with the user's mappar.
+// Hidden entirely until they have at least one map to file into.
+function populateAddGroupSelect() {
+    const field = $("addGroupField");
+    const sel = $("addGroup");
+    if (!field || !sel) return;
+    const prev = sel.value;
+    sel.innerHTML = "";
+    sel.appendChild(new Option("🗂 Välj mapp", ""));
+    for (const g of groups) sel.appendChild(new Option(g.name, String(g.id)));
+    // Always offer an inline "create map" entry so a new källa can be filed into
+    // a brand-new map without leaving the form.
+    sel.appendChild(new Option("➕ Skapa ny mapp…", "__new__"));
+    if (prev && groups.some((g) => String(g.id) === prev)) sel.value = prev;
+    field.hidden = false;
 }
 
 // =====================
@@ -720,7 +1030,7 @@ function backfillAlerts(list) {
     if (newCount) {
         renderAlertLog();
         scheduleSeen();
-        if (firstBackfillDone) {
+        if (firstBackfillDone && notificationsEnabled) {
             beep();
             toast("Nya larm", `${newCount} larm medan anslutningen var nere`, "🚨");
         }
@@ -735,8 +1045,9 @@ function backfillAlerts(list) {
 // silent catch-up).
 let firstPollDone = false;
 async function pollAlerts() {
+    if (!currentUser && authRequired) return;
     try {
-        const res = await fetch("/api/alerts");
+        const res = await apiFetch("/api/alerts");
         if (!res.ok) return;
         const list = await res.json();
         if (!Array.isArray(list)) return;
@@ -747,7 +1058,7 @@ async function pollAlerts() {
         if (newCount) {
             renderAlertLog();
             scheduleSeen();
-            if (firstPollDone) {
+            if (firstPollDone && notificationsEnabled) {
                 beep();
                 toast("Nya larm", `${newCount} ${newCount === 1 ? "nytt larm" : "nya larm"}`, "🚨");
             }
@@ -778,19 +1089,21 @@ function isUnread(at) {
 // when you're working in another tab.
 const BASE_TITLE = document.title;
 function updateTabTitle() {
-    const unread = alerts.reduce((n, a) => n + (isUnread(a.at) ? 1 : 0), 0);
+    const unread = alerts.reduce((n, a) => n + (isUnread(a.at) && !mutedSourceIds.has(a.id) ? 1 : 0), 0);
     document.title = unread > 0 ? `(${unread}) ${BASE_TITLE}` : BASE_TITLE;
 }
 
 function renderAlertLog() {
     updateTabTitle();
     const log = $("alertLog");
-    if (!alerts.length) {
+    // Hide larm from sources the user has filed into a muted bevakning.
+    const visible = alerts.filter((a) => !mutedSourceIds.has(a.id));
+    if (!visible.length) {
         log.innerHTML = `<li class="alert-empty">Inga larm sedan start. Det dyker upp här direkt.</li>`;
         return;
     }
     log.innerHTML = "";
-    alerts.slice(0, 50).forEach((a) => {
+    visible.slice(0, 50).forEach((a) => {
         const li = document.createElement("li");
         li.className = "alert-item" + (isUnread(a.at) ? " new" : "");
         li.innerHTML = `<span class="marker"></span><div><div class="alert-title"></div><div class="alert-sub"></div><div class="alert-time"></div></div>`;
@@ -844,12 +1157,15 @@ function scheduleSeen() {
 function handleAlert(payload, { sound = true } = {}) {
     const added = addAlert(payload);
     if (!added) return;
+    render();
+    // The Larmflöde always updates above; sound + toast + OS banner only fire
+    // when the user has notifications switched on.
+    if (!notificationsEnabled) return;
     if (sound) beep();
     const title = payload.name || "Källa";
     const body = payload.latest_item_title || "Uppdatering upptäckt";
     toast(title, body, "🚨");
     notify(title, body);
-    render();
 }
 
 // =====================
@@ -887,6 +1203,175 @@ function connectStream() {
 }
 
 // =====================
+// Bevakningar (source groups)
+// =====================
+// In-app modal (matches the login UI) for naming/renaming a bevakning. Resolves
+// to the trimmed name, or null if the user cancels.
+function openGroupModal({ title, value = "" }) {
+    return new Promise((resolve) => {
+        const gate = $("groupModal");
+        const form = $("groupForm");
+        const input = $("groupName");
+        const err = $("groupModalError");
+        $("groupModalTitle").textContent = title;
+        err.hidden = true;
+        input.value = value;
+        gate.hidden = false;
+        setTimeout(() => { input.focus(); input.select(); }, 30);
+
+        function cleanup() {
+            gate.hidden = true;
+            form.removeEventListener("submit", onSubmit);
+            $("groupCancel").removeEventListener("click", onCancel);
+            gate.removeEventListener("mousedown", onBackdrop);
+            document.removeEventListener("keydown", onKey);
+        }
+        function onSubmit(e) {
+            e.preventDefault();
+            const v = input.value.trim();
+            if (!v) { err.textContent = "Ange ett namn"; err.hidden = false; return; }
+            cleanup();
+            resolve(v);
+        }
+        function onCancel() { cleanup(); resolve(null); }
+        function onBackdrop(e) { if (e.target === gate) { cleanup(); resolve(null); } }
+        function onKey(e) { if (e.key === "Escape") { cleanup(); resolve(null); } }
+
+        form.addEventListener("submit", onSubmit);
+        $("groupCancel").addEventListener("click", onCancel);
+        gate.addEventListener("mousedown", onBackdrop);
+        document.addEventListener("keydown", onKey);
+    });
+}
+
+// Shared confirmation dialog (same card style as login/maps), replacing the
+// browser's native confirm() so every popup looks the same. Resolves true/false.
+function confirmDialog({ title = "Bekräfta", message = "", okLabel = "Ta bort", cancelLabel = "Avbryt" }) {
+    return new Promise((resolve) => {
+        const gate = $("confirmModal");
+        const ok = $("confirmOk");
+        const cancel = $("confirmCancel");
+        $("confirmTitle").textContent = title;
+        $("confirmText").textContent = message;
+        ok.textContent = okLabel;
+        cancel.textContent = cancelLabel;
+        gate.hidden = false;
+        setTimeout(() => ok.focus(), 30);
+
+        function cleanup() {
+            gate.hidden = true;
+            ok.removeEventListener("click", onOk);
+            cancel.removeEventListener("click", onCancel);
+            gate.removeEventListener("mousedown", onBackdrop);
+            document.removeEventListener("keydown", onKey);
+        }
+        function onOk() { cleanup(); resolve(true); }
+        function onCancel() { cleanup(); resolve(false); }
+        function onBackdrop(e) { if (e.target === gate) { cleanup(); resolve(false); } }
+        function onKey(e) {
+            if (e.key === "Escape") { cleanup(); resolve(false); }
+            else if (e.key === "Enter") { cleanup(); resolve(true); }
+        }
+
+        ok.addEventListener("click", onOk);
+        cancel.addEventListener("click", onCancel);
+        gate.addEventListener("mousedown", onBackdrop);
+        document.addEventListener("keydown", onKey);
+    });
+}
+
+// Step 2 of creating a map: pick which existing källor to file into it. Shows a
+// checkbox list of the user's sources (same card style as the other popups).
+// Resolves when the user saves, skips, or dismisses.
+function openAddSourcesModal(group, sources) {
+    return new Promise((resolve) => {
+        const gate = $("addSourcesModal");
+        const list = $("addSourcesList");
+        const saveBtn = $("addSourcesSave");
+        const skipBtn = $("addSourcesSkip");
+        $("addSourcesTitle").textContent = `Lägg till källor i “${group.name}”`;
+
+        // Ungrouped sources first, then alphabetical, so the obvious candidates
+        // are at the top.
+        const items = sources.slice().sort((a, b) => {
+            const ag = a.group_id == null ? 0 : 1;
+            const bg = b.group_id == null ? 0 : 1;
+            if (ag !== bg) return ag - bg;
+            return (a.name || "").localeCompare(b.name || "", "sv");
+        });
+        list.innerHTML = "";
+        for (const s of items) {
+            const label = document.createElement("label");
+            label.className = "pick-item";
+            const cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.value = String(s.id);
+            const name = document.createElement("span");
+            name.className = "pick-name";
+            name.textContent = s.name;
+            const meta = document.createElement("span");
+            meta.className = "pick-host";
+            if (s.group_id != null && s.group_id !== group.id) {
+                const g = groupsById.get(s.group_id);
+                meta.textContent = g ? `i ${g.name}` : "";
+            } else {
+                meta.textContent = hostOf(s.url) || "";
+            }
+            label.append(cb, name, meta);
+            list.appendChild(label);
+        }
+        gate.hidden = false;
+
+        function cleanup() {
+            gate.hidden = true;
+            saveBtn.removeEventListener("click", onSave);
+            skipBtn.removeEventListener("click", onSkip);
+            gate.removeEventListener("mousedown", onBackdrop);
+            document.removeEventListener("keydown", onKey);
+        }
+        async function onSave() {
+            const ids = Array.from(list.querySelectorAll("input:checked")).map((c) => Number(c.value));
+            cleanup();
+            let n = 0;
+            for (const id of ids) {
+                try { await assignSourceGroup(id, group.id); n += 1; } catch { /* ignore */ }
+            }
+            if (n) toast("Källor tillagda", `${n} ${n === 1 ? "källa" : "källor"} i ${group.name}`, "🗂");
+            resolve();
+        }
+        function onSkip() { cleanup(); resolve(); }
+        function onBackdrop(e) { if (e.target === gate) { cleanup(); resolve(); } }
+        function onKey(e) { if (e.key === "Escape") { cleanup(); resolve(); } }
+
+        saveBtn.addEventListener("click", onSave);
+        skipBtn.addEventListener("click", onSkip);
+        gate.addEventListener("mousedown", onBackdrop);
+        document.addEventListener("keydown", onKey);
+    });
+}
+
+const newGroupBtn = $("newGroupBtn");
+if (newGroupBtn) {
+    newGroupBtn.addEventListener("click", async () => {
+        const name = await openGroupModal({ title: "Ny mapp" });
+        if (name == null) return;
+        try {
+            const created = await createGroup(name);
+            toast("Mapp skapad", name, "🗂");
+            // Next step: let them fill the new map with existing källor right away.
+            let srcs = [];
+            try { srcs = await fetchSources(); } catch { /* ignore */ }
+            if (created && created.id && Array.isArray(srcs) && srcs.length) {
+                await openAddSourcesModal(created, srcs);
+            }
+            await render();
+        } catch (err) {
+            toast("Fel", err.message, "⚠️");
+        }
+    });
+}
+
+// =====================
 // Add-source form
 // =====================
 $("addForm").addEventListener("submit", async (e) => {
@@ -895,43 +1380,53 @@ $("addForm").addEventListener("submit", async (e) => {
     errEl.hidden = true;
     const name = $("name").value.trim();
     const url = $("url").value.trim();
+    const groupSel = $("addGroup");
+    let groupVal = groupSel ? groupSel.value : "";
+    if (groupVal === "__new__") groupVal = ""; // sentinel, not a real map
     try {
         const created = await addSource({ name, url });
+        // File it straight into the chosen map, if one was picked.
+        if (groupVal) {
+            try {
+                await assignSourceGroup(created.id, Number(groupVal));
+            } catch (assignErr) {
+                toast("Obs", `Källan lades till men kunde inte läggas i mappen: ${assignErr.message}`, "⚠️");
+            }
+        }
         $("name").value = "";
         $("url").value = "";
         await render();
-        const how = created.extract_mode === "ticker"
+        const mapName = groupVal && groupsById.get(Number(groupVal)) ? groupsById.get(Number(groupVal)).name : null;
+        const base = created.extract_mode === "ticker"
             ? `${name} bevakas som live-ticker`
             : created.feed_url ? `${name} (RSS hittades)` : `${name} bevakas nu`;
+        const how = mapName ? `${base} · i mappen "${mapName}"` : base;
         toast("Källa tillagd", how, created.extract_mode === "ticker" ? "⚡" : "📡");
     } catch (err) {
         errEl.textContent = err.message || "Kunde inte lägga till källa";
         errEl.hidden = false;
     }
 });
-async function clearAllSources() {
-    const res = await fetch("/api/sources", { method: "DELETE" });
-    if (!res.ok) throw new Error("Kunde inte rensa källor");
-    return res.json();
-}
 
-const clearSourcesBtn = $("clearSources");
-if (clearSourcesBtn) {
-    clearSourcesBtn.addEventListener("click", async () => {
-        if (!confirm("Ta bort ALLA bevakade källor? Detta går inte att ångra.")) return;
-        clearSourcesBtn.disabled = true;
+// Picking "Skapa ny mapp…" in the add-källa picker creates a map inline and
+// selects it, so the källa you're adding lands straight in the new map.
+const addGroupSel = $("addGroup");
+if (addGroupSel) {
+    addGroupSel.addEventListener("change", async () => {
+        if (addGroupSel.value !== "__new__") return;
+        addGroupSel.value = "";
+        const name = await openGroupModal({ title: "Ny mapp" });
+        if (name == null) return;
         try {
-            await clearAllSources();
+            const created = await createGroup(name);
             await render();
-            toast("Källor rensade", "Alla bevakade källor togs bort", "🗑");
+            if (created && created.id) addGroupSel.value = String(created.id);
+            toast("Mapp skapad", name, "🗂");
         } catch (err) {
             toast("Fel", err.message, "⚠️");
-        } finally {
-            clearSourcesBtn.disabled = false;
         }
     });
 }
-
 // Live heartbeat: update the "checked Xs ago · next in Ym" text in place every
 // few seconds so each source visibly shows it's being watched.
 function refreshHeartbeats() {
@@ -941,33 +1436,137 @@ function refreshHeartbeats() {
 }
 setInterval(refreshHeartbeats, 5000);
 
-// Relative-time refresh (SSE handles real updates)
-setInterval(render, 30000);
-
-// Poll for alerts as a reliable fallback when the live stream is buffered by a
-// tunnel/proxy. Runs everywhere; de-dup keeps it in sync with the live stream.
-pollAlerts();
-setInterval(pollAlerts, 10000);
-
-// =====================
-// Start
-// =====================
 document.addEventListener("visibilitychange", () => {
     if (!document.hidden) { ensureAudio(); scheduleSeen(); }
 });
 window.addEventListener("focus", () => { ensureAudio(); scheduleSeen(); });
 
 // =====================
-// Start
+// Auth / login gate
 // =====================
-(async function start() {
+function showLogin() {
+    const gate = $("loginGate");
+    if (gate) gate.hidden = false;
+    const ub = $("userBox");
+    if (ub) ub.hidden = true;
+    const u = $("loginUser");
+    if (u) setTimeout(() => u.focus(), 30);
+}
+function hideLogin() {
+    const gate = $("loginGate");
+    if (gate) gate.hidden = true;
+}
+function setUser(username) {
+    currentUser = username || null;
+    const ub = $("userBox");
+    const chip = $("userChip");
+    if (username) {
+        if (chip) chip.textContent = "👤 " + username;
+        if (ub) ub.hidden = false;
+        // If a different person last used this browser, drop the cached larm so
+        // they don't briefly see someone else's feed (server backfill refills it).
+        try {
+            const last = localStorage.getItem("nm_last_user");
+            if (last && last !== username) resetAlerts();
+            localStorage.setItem("nm_last_user", username);
+        } catch { /* ignore */ }
+    } else if (ub) {
+        ub.hidden = true;
+    }
+}
+function resetAlerts() {
+    alerts.length = 0;
+    recentAlertKeys.clear();
+    try {
+        localStorage.removeItem("nm_alerts");
+        localStorage.removeItem("nm_alerts_seen");
+    } catch { /* ignore */ }
+    renderAlertLog();
+}
+async function fetchMe() {
+    try {
+        const res = await fetch("/api/me");
+        if (!res.ok) return { authEnabled: true, username: null };
+        return res.json();
+    } catch {
+        return { authEnabled: true, username: null };
+    }
+}
+
+const loginForm = $("loginForm");
+if (loginForm) {
+    loginForm.addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const errEl = $("loginError");
+        if (errEl) errEl.hidden = true;
+        const username = $("loginUser").value.trim();
+        const password = $("loginPass").value;
+        try {
+            const res = await fetch("/api/login", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ username, password }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || "Inloggning misslyckades");
+            setUser(data.username);
+            $("loginPass").value = "";
+            hideLogin();
+            boot();
+        } catch (err) {
+            if (errEl) { errEl.textContent = err.message || "Inloggning misslyckades"; errEl.hidden = false; }
+        }
+    });
+}
+async function doLogout() {
+    try { await fetch("/api/logout", { method: "POST" }); } catch { /* ignore */ }
+    await unregisterPush().catch(() => { /* ignore */ });
+    resetAlerts();
+    try { localStorage.removeItem("nm_last_user"); } catch { /* ignore */ }
+    location.reload();
+}
+
+// Clicking the username chip is the logout path (no separate button).
+const userChip = $("userChip");
+if (userChip) {
+    userChip.addEventListener("click", async () => {
+        const ok = await confirmDialog({
+            title: "Logga ut",
+            message: currentUser ? `Vill du logga ut som ${currentUser}?` : "Vill du logga ut?",
+            okLabel: "Logga ut",
+        });
+        if (ok) await doLogout();
+    });
+}
+
+// =====================
+// Boot (after login)
+// =====================
+let booted = false;
+function boot() {
+    if (booted) return;
+    booted = true;
     initNotifications();
     // Seed the de-dupe map from previously saved alerts so the reconnect
     // backfill doesn't duplicate larm already in the log.
     alerts.forEach((a) => recentAlertKeys.set(alertKey(a.id, a.at), Date.now()));
     renderAlertLog();
     scheduleSeen();
-
-    await render();
+    render();
     connectStream();
+    setInterval(render, 30000); // relative-time refresh (SSE handles real updates)
+    pollAlerts();
+    setInterval(pollAlerts, 10000); // reliable fallback if the live stream is buffered
+}
+
+(async function start() {
+    const me = await fetchMe();
+    authRequired = !!me.authEnabled;
+    if (authRequired && !me.username) {
+        showLogin();
+        return;
+    }
+    setUser(me.username);
+    hideLogin();
+    boot();
 })();

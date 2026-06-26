@@ -10,12 +10,13 @@ const { discoverFeeds } = require("../services/feeds");
 const notifier = require("../services/notifier");
 const sse = require("../services/sse");
 const {
-    getAllSources,
+    getSourcesForUser,
     getSourceById,
+    userCanSeeSource,
+    userCanModifySource,
     addSource,
     toggleSource,
     deleteSource,
-    deleteAllSources,
     getHistory,
     addPushSubscription,
     removePushSubscription,
@@ -113,14 +114,19 @@ function rateLimitCheck(req, res, next) {
 
 // Recent alerts. Polled by the client as a reliable fallback when the live SSE
 // stream is buffered by a proxy/tunnel.
-router.get("/alerts", (_req, res) => {
-    res.json(sse.recentAlertsAll());
+router.get("/alerts", async (req, res) => {
+    try {
+        res.json(await sse.recentAlertsForOwner(req.owner));
+    } catch (err) {
+        logger.error({ err: err.message }, "list alerts failed");
+        res.status(500).json({ error: "Databasfel" });
+    }
 });
 
 // ---------- sources ----------
-router.get("/sources", async (_req, res) => {
+router.get("/sources", async (req, res) => {
     try {
-        const sources = await getAllSources();
+        const sources = await getSourcesForUser(req.owner);
         res.json(sources.map(withTiming));
     } catch (err) {
         logger.error({ err: err.message }, "list sources failed");
@@ -132,7 +138,7 @@ router.get("/sources/:id", async (req, res) => {
     const id = parseId(req, res);
     if (id === null) return;
     const source = await getSourceById(id);
-    if (!source) {
+    if (!source || !userCanSeeSource(source, req.owner)) {
         return res.status(404).json({ error: "Hittades inte" });
     }
     res.json(source);
@@ -143,7 +149,7 @@ router.get("/sources/:id/history", async (req, res) => {
     if (id === null) return;
     try {
         const source = await getSourceById(id);
-        if (!source) {
+        if (!source || !userCanSeeSource(source, req.owner)) {
             return res.status(404).json({ error: "Hittades inte" });
         }
         res.json(await getHistory(id, 50));
@@ -180,10 +186,11 @@ router.post("/sources", async (req, res) => {
         return res.status(400).json({ error: err.message || "Otillåten URL" });
     }
 
-    // Warn instead of silently creating a duplicate of a source we already watch.
+    // Warn instead of silently creating a duplicate of a source already visible
+    // to this user (their own + the shared core list).
     try {
         const norm = normalizeForCompare(data.url);
-        const existing = await getAllSources();
+        const existing = await getSourcesForUser(req.owner);
         const dup = existing.find((s) => normalizeForCompare(s.url) === norm);
         if (dup) {
             return res.status(409).json({ error: `Källan finns redan i listan: "${dup.name}"` });
@@ -217,6 +224,7 @@ router.post("/sources", async (req, res) => {
             render_mode: data.render_mode || "static",
             extract_mode: extractMode,
             check_interval_sec: data.check_interval_sec || null,
+            owner: req.owner,
         });
         sse.broadcast("sources-changed", { at: new Date().toISOString() });
         res.status(201).json(source);
@@ -251,8 +259,11 @@ router.post("/sources/:id/toggle", async (req, res) => {
     }
     try {
         const existing = await getSourceById(id);
-        if (!existing) {
+        if (!existing || !userCanSeeSource(existing, req.owner)) {
             return res.status(404).json({ error: "Hittades inte" });
+        }
+        if (!userCanModifySource(existing, req.owner)) {
+            return res.status(403).json({ error: "Kärnkälla – kan inte ändras" });
         }
         const result = await toggleSource(id, data.isActive);
         if (!result.found) return res.status(404).json({ error: "Hittades inte" });
@@ -263,21 +274,18 @@ router.post("/sources/:id/toggle", async (req, res) => {
     }
 });
 
-router.delete("/sources", async (_req, res) => {
-    try {
-        const result = await deleteAllSources();
-        sse.broadcast("sources-changed", { at: new Date().toISOString() });
-        res.json(result);
-    } catch (err) {
-        logger.error({ err: err.message }, "delete all sources failed");
-        res.status(500).json({ error: "Databasfel" });
-    }
-});
-
 router.delete("/sources/:id", async (req, res) => {
     const id = parseId(req, res);
     if (id === null) return;
     try {
+        const existing = await getSourceById(id);
+        if (!existing || !userCanSeeSource(existing, req.owner)) {
+            return res.status(404).json({ error: "Hittades inte" });
+        }
+        if (existing.is_permanent) return res.status(403).json({ error: "Kärnkälla – kan inte tas bort" });
+        if (!userCanModifySource(existing, req.owner)) {
+            return res.status(403).json({ error: "Du kan bara ta bort dina egna källor" });
+        }
         const result = await deleteSource(id);
         if (!result.found) return res.status(404).json({ error: "Hittades inte" });
         if (result.blocked) return res.status(403).json({ error: "Kärnkälla – kan inte tas bort" });
@@ -293,7 +301,7 @@ router.post("/sources/:id/check", rateLimitCheck, async (req, res) => {
     if (id === null) return;
     try {
         const existing = await getSourceById(id);
-        if (!existing) {
+        if (!existing || !userCanSeeSource(existing, req.owner)) {
             return res.status(404).json({ error: "Hittades inte" });
         }
         const result = await checkOneSourceById(id);
@@ -343,7 +351,7 @@ router.post("/push/subscribe", async (req, res) => {
         return validationError(res, err);
     }
     try {
-        await addPushSubscription(data.subscription);
+        await addPushSubscription(data.subscription, req.owner);
         res.status(201).json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: "Kunde inte spara prenumeration" });

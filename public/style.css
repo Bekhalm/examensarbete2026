@@ -365,15 +365,6 @@ body {
     margin-bottom: 28px;
 }
 
-.hero h1 {
-    font-family: var(--serif);
-    font-weight: 800;
-    font-size: clamp(28px, 5vw, 44px);
-    line-height: 1.08;
-    margin: 0 0 12px;
-    letter-spacing: -0.5px;
-}
-
 .lede {
     color: var(--muted);
     font-size: 16px;
@@ -423,6 +414,22 @@ body {
     color: var(--text);
 }
 
+.panel-head-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.panel-sub {
+    margin: 0;
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--muted);
+}
+
 /* Emphasise the alerts feed, soften the sources sidebar heading. */
 .alerts-panel .panel-head h2 {
     font-size: 15px;
@@ -462,6 +469,25 @@ body {
 
 .add-form input::placeholder {
     color: var(--muted-2);
+}
+
+.add-group-select {
+    width: 100%;
+    font-family: var(--sans);
+    font-size: 14px;
+    color: var(--text);
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 11px 13px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.add-group-select:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .add-form input:focus {
@@ -670,6 +696,192 @@ tr.flash {
     opacity: 0.5;
     cursor: default;
     user-select: none;
+}
+
+/* ---------- Bevakningar (source groups) ---------- */
+/* Short explainer + "new map" button, sitting under the add-source form. */
+.sources-hint-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 10px 20px 0;
+}
+
+.sources-hint {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--muted);
+}
+
+.sources-hint strong {
+    color: var(--text);
+}
+
+/* A group acts as a section bar with the sources below it. */
+.group-row td {
+    padding: 0;
+    border-top: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.03);
+}
+
+.group-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 12px;
+    border-left: 3px solid var(--accent);
+}
+
+.group-row.ungrouped .group-head {
+    border-left-color: transparent;
+}
+
+.group-icon {
+    font-size: 14px;
+}
+
+.group-name {
+    font-weight: 700;
+    font-size: 13px;
+    letter-spacing: 0.3px;
+    color: var(--text);
+}
+
+.group-name.muted {
+    font-weight: 600;
+    color: var(--muted-2);
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 1px;
+}
+
+.group-spacer {
+    flex: 1;
+}
+
+/* The on/off button — labelled so its purpose is obvious. */
+.group-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 4px 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.group-toggle.on {
+    border-color: var(--live);
+    color: var(--live);
+    background: var(--live-soft);
+}
+
+.group-toggle.off {
+    border-color: var(--accent);
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+}
+
+.group-toggle:hover {
+    filter: brightness(1.12);
+}
+
+.group-action {
+    font-size: 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 4px 7px;
+    cursor: pointer;
+    opacity: 0.6;
+    transition: opacity 0.15s, border-color 0.15s;
+}
+
+.group-action:hover {
+    opacity: 1;
+    border-color: var(--muted-2);
+}
+
+.group-action.danger:hover {
+    border-color: var(--accent);
+}
+
+.group-row.muted .group-name {
+    color: var(--muted);
+}
+
+/* Sources inside a muted group read as dimmed/parked. */
+tr.in-muted-group {
+    opacity: 0.5;
+}
+
+/* Drag handle to move a source between bevakningar. */
+.drag-handle {
+    flex: none;
+    font-size: 15px;
+    line-height: 1;
+    color: var(--muted-2);
+    cursor: grab;
+    padding: 0 2px;
+    user-select: none;
+}
+
+.drag-handle:hover {
+    color: var(--text);
+}
+
+.drag-handle:active {
+    cursor: grabbing;
+}
+
+tr.dragging {
+    opacity: 0.4;
+}
+
+/* The bevakning currently under the cursor while dragging. */
+tr.drop-target td {
+    background: var(--accent-soft);
+}
+
+tr.group-row.drop-target td {
+    box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+/* Per-source "file into a bevakning" control. */
+.group-pick {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 6px;
+}
+
+.group-pick-label {
+    font-size: 11px;
+    color: var(--muted-2);
+    white-space: nowrap;
+}
+
+.group-select {
+    font-size: 11.5px;
+    color: var(--muted);
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 3px 6px;
+    max-width: 180px;
+    cursor: pointer;
+}
+
+.group-select:hover {
+    border-color: var(--muted-2);
+    color: var(--text);
 }
 
 /* toggle switch */
@@ -980,8 +1192,10 @@ tr.flash {
 .modal-backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(5, 6, 9, 0.7);
-    backdrop-filter: blur(3px);
+    background:
+        radial-gradient(900px 360px at 50% -10%, var(--accent-soft), transparent 60%),
+        rgba(8, 9, 11, 0.5);
+    backdrop-filter: blur(4px);
 }
 
 .modal-card {
@@ -1007,8 +1221,9 @@ tr.flash {
 
 .modal-head h3 {
     margin: 0;
-    font-family: var(--serif);
     font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
 }
 
 .modal-body {
@@ -1096,4 +1311,172 @@ tr.flash {
     .alert-log {
         max-height: none;
     }
+}
+
+/* ===== Logged-in user chip + logout ===== */
+.user-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+/* The `hidden` attribute must win over the display rules above/below, otherwise
+   these stay visible when toggled off (class selectors outrank UA [hidden]). */
+.user-box[hidden],
+.login-gate[hidden] {
+    display: none;
+}
+.user-chip {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 5px 11px;
+    white-space: nowrap;
+    cursor: pointer;
+    transition: color 0.14s ease, border-color 0.14s ease, background 0.14s ease;
+}
+.user-chip:hover {
+    color: var(--accent-strong);
+    border-color: rgba(245, 40, 59, 0.5);
+    background: var(--accent-soft);
+}
+.user-chip:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* ===== Login gate ===== */
+.login-gate {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background:
+        radial-gradient(900px 360px at 50% -10%, var(--accent-soft), transparent 60%),
+        rgba(8, 9, 11, 0.5);
+    backdrop-filter: blur(4px);
+}
+.login-card {
+    width: 100%;
+    max-width: 380px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 28px 26px 26px;
+}
+.login-brand {
+    font-size: 22px;
+    margin-bottom: 6px;
+}
+.login-brand .wordmark { letter-spacing: -0.5px; }
+.login-lede {
+    color: var(--muted);
+    font-size: 14px;
+    margin: 0 0 20px;
+}
+.login-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--muted);
+    margin: 0 0 6px;
+}
+.login-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 15px;
+    padding: 11px 12px;
+    margin-bottom: 16px;
+    font-family: var(--sans);
+}
+.login-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.login-submit {
+    width: 100%;
+    justify-content: center;
+    margin-top: 4px;
+}
+.login-title {
+    margin: 0 0 6px;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    color: var(--text);
+}
+.login-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 4px;
+}
+.login-actions .btn {
+    flex: 1;
+    justify-content: center;
+}
+/* Confirm dialogs reuse the login card; keep intentional line breaks readable. */
+.confirm-text {
+    white-space: pre-line;
+}
+
+/* "Add sources to map" step: scrollable checkbox list inside the login card. */
+#addSourcesModal .login-card {
+    max-width: 440px;
+}
+.pick-list {
+    max-height: 280px;
+    overflow-y: auto;
+    margin: 0 0 18px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--bg-2);
+}
+.pick-item {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 9px 13px;
+    border-bottom: 1px solid var(--border-soft);
+    cursor: pointer;
+    font-size: 14px;
+}
+.pick-item:last-child {
+    border-bottom: none;
+}
+.pick-item:hover {
+    background: var(--surface-2);
+}
+.pick-item input {
+    width: 15px;
+    height: 15px;
+    flex: none;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+.pick-name {
+    flex: 1;
+    min-width: 0;
+    color: var(--text);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pick-host {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted-2);
+    white-space: nowrap;
 }

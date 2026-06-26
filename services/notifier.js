@@ -2,7 +2,7 @@ const fetch = require("node-fetch");
 const config = require("../lib/config");
 const logger = require("../lib/logger");
 const sse = require("./sse");
-const { getPushSubscriptions, removePushSubscription } = require("../db/database");
+const { getPushSubscriptions, getPushSubscriptionsForOwner, removePushSubscription } = require("../db/database");
 
 let webpush = null;
 let mailer = null;
@@ -64,7 +64,10 @@ async function sendEmail(payload) {
 
 async function sendPush(payload) {
     if (!webpush) return;
-    const subs = await getPushSubscriptions();
+    // Shared (core) sources go to everyone; a personal source only to its owner.
+    const subs = payload.owner == null
+        ? await getPushSubscriptions()
+        : await getPushSubscriptionsForOwner(payload.owner);
     const body = JSON.stringify({
         // Channel name as the heading, headline as the message. The browser
         // appends the site address itself (position is browser-controlled).
@@ -90,6 +93,9 @@ function notifyChange(source, info = {}) {
         id: source.id,
         name: source.name,
         url: source.url,
+        // Who should receive this: null = shared/core source (everyone), else the
+        // owning user only.
+        owner: source.owner || null,
         new_items_count: info.new_items_count || 0,
         latest_item_title: info.latest_item_title || null,
         latest_item_url: info.latest_item_url || null,
@@ -97,7 +103,7 @@ function notifyChange(source, info = {}) {
         at: new Date().toISOString(),
     };
 
-    // Instant in-app delivery to everyone.
+    // Instant in-app delivery to the people allowed to see this source.
     sse.broadcastAlert(payload);
 
     // Out-of-band channels (fire and forget).
