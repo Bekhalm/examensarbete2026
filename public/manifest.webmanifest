@@ -1,6 +1,6 @@
 {
-  "name": "Newsroom Monitor",
-  "short_name": "Newsroom",
+  "name": "NewsMonitor",
+  "short_name": "NewsMonitor",
   "description": "Bevakar nyhetskällor och larmar i realtid när något nytt publiceras.",
   "start_url": "/",
   "scope": "/",

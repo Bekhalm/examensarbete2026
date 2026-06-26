@@ -10,7 +10,7 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "Newsroom Monitor — realtidsbevakning av nyhetssajter för journalister.",
+  "description": "NewsMonitor — realtidsbevakning av nyhetssajter för journalister.",
   "dependencies": {
     "cheerio": "^1.1.2",
     "dotenv": "^16.4.5",

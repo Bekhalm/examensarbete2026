@@ -7,20 +7,6 @@ let latestAlertSourceId = null;
 const alerts = loadAlerts(); // [{ name, url, at }]
 const recentAlertKeys = new Map(); // de-dupe local vs SSE alerts
 
-// Personal "space" (a name/initials) so each colleague has their own source
-// list. Shared/core sources are visible to everyone regardless. When the
-// password gate is on, the login username IS the space (authProvidedSpace),
-// so no in-app prompt is needed.
-let nmSpace = (localStorage.getItem("nm_space") || "").trim();
-let authProvidedSpace = false;
-
-// fetch() wrapper that tags every API call with the current space.
-function apiFetch(url, opts = {}) {
-    const headers = { ...(opts.headers || {}) };
-    if (nmSpace) headers["X-Space"] = nmSpace;
-    return fetch(url, { ...opts, headers });
-}
-
 // =====================
 // Helpers
 // =====================
@@ -228,19 +214,40 @@ function notify(title, body) {
         /* ignore */
     }
 }
-async function enableNotifications() {
+const NOTIF_DISABLED_KEY = "nm_notif_disabled";
+function notifDisabledByUser() {
+    try { return localStorage.getItem(NOTIF_DISABLED_KEY) === "1"; } catch { return false; }
+}
+function setNotifDisabledFlag(off) {
+    try {
+        if (off) localStorage.setItem(NOTIF_DISABLED_KEY, "1");
+        else localStorage.removeItem(NOTIF_DISABLED_KEY);
+    } catch { /* ignore */ }
+}
+// One button, two states: turn notifications on (ask permission + subscribe) or
+// off (unsubscribe from this device so the server stops pushing to it).
+async function toggleNotifications() {
     ensureAudio();
+    if (notificationsEnabled) {
+        await disableNotifications();
+        return;
+    }
     let perm = "granted";
     if ("Notification" in window) perm = await Notification.requestPermission();
     notificationsEnabled = perm === "granted";
+    if (notificationsEnabled) {
+        setNotifDisabledFlag(false);
+        beep(); // instant feedback that sound works (also unlocks audio this load)
+        registerPush();
+    }
     updateNotifUi();
-    // Always play the ping on click: it unlocks audio for this page load AND
-    // gives instant feedback that sound works.
-    beep();
-    if (notificationsEnabled) registerPush();
 }
-// The button stays visible as a status + test control. It's the reliable place
-// to click once per page load to unlock sound (browsers require a gesture).
+async function disableNotifications() {
+    notificationsEnabled = false;
+    setNotifDisabledFlag(true);
+    await unregisterPush();
+    updateNotifUi();
+}
 function updateNotifUi() {
     const btn = $("enableNotifs");
     if (!btn) return;
@@ -248,24 +255,17 @@ function updateNotifUi() {
     const status = $("notifStatus");
     if (status) status.classList.remove("warn", "ok", "bad");
     const denied = "Notification" in window && Notification.permission === "denied";
-    if (notificationsEnabled && audioReady) {
-        btn.innerHTML = '<span class="bell">🔔</span> Notiser på · testa ljud';
+    if (notificationsEnabled) {
+        btn.innerHTML = '<span class="bell">🔔</span> Notiser på · klicka för att stänga av';
         btn.classList.add("on");
         btn.classList.remove("needs-action");
-        btn.title = "Notiser och ljud är på. Klicka för att testa pinget.";
+        btn.title = "Notiser och ljud är på. Klicka för att stänga av notiser på den här enheten.";
         if (status) status.textContent = "";
     } else if (denied) {
         btn.innerHTML = '<span class="bell">🔕</span> Notiser blockerade';
         btn.classList.remove("on", "needs-action");
         btn.title = "Tillåt notiser i webbläsarens inställningar för att få larm.";
         if (status) { status.textContent = "Blockerade i webbläsaren"; status.classList.add("bad"); }
-    } else if (notificationsEnabled) {
-        // Permission granted, but sound is still locked until a click this load.
-        btn.innerHTML = '<span class="bell">🔔</span> Klicka för att tillåta notiser';
-        btn.classList.add("needs-action");
-        btn.classList.remove("on");
-        btn.title = "Notistillstånd finns, men ljudet är låst tills du klickar en gång den här sessionen.";
-        if (status) status.textContent = "";
     } else {
         btn.innerHTML = '<span class="bell">🔔</span> Aktivera ljud & notiser';
         btn.classList.add("needs-action");
@@ -274,16 +274,16 @@ function updateNotifUi() {
         if (status) { status.textContent = "← Klicka för att få larm"; status.classList.add("warn"); }
     }
 }
-// On load: if the browser already granted permission, turn notifications on
-// automatically so the choice persists across reloads.
+// On load: re-enable automatically only if the browser still grants permission
+// AND the user hasn't explicitly turned notifications off here before.
 function initNotifications() {
-    if ("Notification" in window && Notification.permission === "granted") {
+    if (!notifDisabledByUser() && "Notification" in window && Notification.permission === "granted") {
         notificationsEnabled = true;
         registerPush();
     }
     updateNotifUi();
 }
-$("enableNotifs").addEventListener("click", enableNotifications);
+$("enableNotifs").addEventListener("click", toggleNotifications);
 
 // Volume control: slider sets level (with a quick preview beep), speaker toggles mute.
 (function initVolumeControls() {
@@ -349,13 +349,32 @@ async function registerPush() {
             userVisibleOnly: true,
             applicationServerKey: urlBase64ToUint8Array(info.publicKey),
         });
-        await apiFetch("/api/push/subscribe", {
+        await fetch("/api/push/subscribe", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ subscription: sub }),
         });
     } catch (err) {
         console.warn("Push registration failed:", err);
+    }
+}
+// Tear down this device's push subscription and tell the server to forget it,
+// so it stops pushing here even when the tab is closed.
+async function unregisterPush() {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    try {
+        const reg = (await navigator.serviceWorker.getRegistration()) || (await navigator.serviceWorker.ready);
+        const sub = reg && (await reg.pushManager.getSubscription());
+        if (!sub) return;
+        const endpoint = sub.endpoint;
+        await sub.unsubscribe().catch(() => { /* ignore */ });
+        await fetch("/api/push/unsubscribe", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ endpoint }),
+        }).catch(() => { /* ignore */ });
+    } catch (err) {
+        console.warn("Push unsubscribe failed:", err);
     }
 }
 
@@ -381,18 +400,18 @@ function toast(title, body, emoji = "🚨") {
 // API
 // =====================
 async function fetchSources() {
-    const res = await apiFetch("/api/sources");
+    const res = await fetch("/api/sources");
     if (!res.ok) throw new Error("Kunde inte hämta källor");
     return res.json();
 }
 async function toggleSource(id, isActive) {
-    const res = await apiFetch(`/api/sources/${id}/toggle`, {
+    const res = await fetch(`/api/sources/${id}/toggle`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ isActive }),
     });
     if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || "Kunde inte ändra källa");
 }
 async function addSource(payload) {
-    const res = await apiFetch("/api/sources", {
+    const res = await fetch("/api/sources", {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
     });
     if (!res.ok) {
@@ -402,11 +421,11 @@ async function addSource(payload) {
     return res.json();
 }
 async function removeSource(id) {
-    const res = await apiFetch(`/api/sources/${id}`, { method: "DELETE" });
+    const res = await fetch(`/api/sources/${id}`, { method: "DELETE" });
     if (!res.ok) throw new Error("Kunde inte ta bort källa");
 }
 async function fetchHistory(id) {
-    const res = await apiFetch(`/api/sources/${id}/history`);
+    const res = await fetch(`/api/sources/${id}/history`);
     if (!res.ok) throw new Error("Kunde inte hämta historik");
     return res.json();
 }
@@ -668,7 +687,7 @@ document.addEventListener("keydown", (e) => {
 function alertKey(id, at) {
     return `${id}:${Math.floor(new Date(at).getTime() / 3000)}`;
 }
-function addAlert(payload) {
+function addAlert(payload, { render = true } = {}) {
     const at = payload.at || payload.last_notified_at || new Date().toISOString();
     const key = alertKey(payload.id, at);
     if (recentAlertKeys.has(key)) return false;
@@ -678,9 +697,66 @@ function addAlert(payload) {
     alerts.unshift({ id: payload.id, name: payload.name, url: payload.url, at, title: payload.latest_item_title || null, articleUrl: payload.latest_item_url || null });
     latestAlertSourceId = payload.id;
     saveAlerts();
-    renderAlertLog();
-    scheduleSeen();
+    if (render) {
+        renderAlertLog();
+        scheduleSeen();
+    }
     return true;
+}
+
+// Merge a batch of recent alerts received on (re)connect, de-duped against
+// what's already shown, then render once. The very first batch (page-load
+// catch-up) is silent; later batches mean the live stream dropped and
+// reconnected, so we ping once for any larm missed during the gap.
+let firstBackfillDone = false;
+function backfillAlerts(list) {
+    let newCount = 0;
+    if (Array.isArray(list)) {
+        // Oldest-first so the newest ends up at the top after each unshift.
+        for (const p of list) {
+            if (addAlert(p, { render: false })) newCount++;
+        }
+    }
+    if (newCount) {
+        renderAlertLog();
+        scheduleSeen();
+        if (firstBackfillDone) {
+            beep();
+            toast("Nya larm", `${newCount} larm medan anslutningen var nere`, "🚨");
+        }
+    }
+    firstBackfillDone = true;
+}
+
+// Polling fallback: the live SSE stream is buffered by some proxies/tunnels
+// (e.g. the free Cloudflare tunnel), so we also poll for recent alerts. This
+// keeps the Larmflöde reliable everywhere. De-dup means it never doubles up
+// with the live stream; it pings once for genuinely new larm (after the first
+// silent catch-up).
+let firstPollDone = false;
+async function pollAlerts() {
+    try {
+        const res = await fetch("/api/alerts");
+        if (!res.ok) return;
+        const list = await res.json();
+        if (!Array.isArray(list)) return;
+        let newCount = 0;
+        for (const p of list) {
+            if (addAlert(p, { render: false })) newCount++;
+        }
+        if (newCount) {
+            renderAlertLog();
+            scheduleSeen();
+            if (firstPollDone) {
+                beep();
+                toast("Nya larm", `${newCount} ${newCount === 1 ? "nytt larm" : "nya larm"}`, "🚨");
+            }
+        }
+        setLive(true);
+        firstPollDone = true;
+    } catch {
+        /* ignore */
+    }
 }
 // "Unread" alerts glow green so you can see where to look when you come back —
 // regardless of how long you were away. They clear a short, calm moment after
@@ -788,9 +864,16 @@ function setLive(connected) {
 let streamConn = null;
 function connectStream() {
     if (streamConn) { try { streamConn.close(); } catch { /* ignore */ } }
-    const es = new EventSource(`/api/stream?space=${encodeURIComponent(nmSpace)}`);
+    const es = new EventSource("/api/stream");
     streamConn = es;
     es.addEventListener("hello", () => setLive(true));
+    es.addEventListener("backfill", (e) => {
+        try {
+            backfillAlerts(JSON.parse(e.data));
+        } catch {
+            /* ignore */
+        }
+    });
     es.addEventListener("alert", (e) => {
         try {
             handleAlert(JSON.parse(e.data));
@@ -827,7 +910,7 @@ $("addForm").addEventListener("submit", async (e) => {
     }
 });
 async function clearAllSources() {
-    const res = await apiFetch("/api/sources", { method: "DELETE" });
+    const res = await fetch("/api/sources", { method: "DELETE" });
     if (!res.ok) throw new Error("Kunde inte rensa källor");
     return res.json();
 }
@@ -861,6 +944,11 @@ setInterval(refreshHeartbeats, 5000);
 // Relative-time refresh (SSE handles real updates)
 setInterval(render, 30000);
 
+// Poll for alerts as a reliable fallback when the live stream is buffered by a
+// tunnel/proxy. Runs everywhere; de-dup keeps it in sync with the live stream.
+pollAlerts();
+setInterval(pollAlerts, 10000);
+
 // =====================
 // Start
 // =====================
@@ -870,89 +958,16 @@ document.addEventListener("visibilitychange", () => {
 window.addEventListener("focus", () => { ensureAudio(); scheduleSeen(); });
 
 // =====================
-// Personal space (name gate)
+// Start
 // =====================
-function updateSpaceUi() {
-    const label = $("spaceName");
-    if (label) label.textContent = nmSpace || "—";
-    const btn = $("spaceBtn");
-    if (btn) btn.title = authProvidedSpace ? `Inloggad som ${nmSpace}` : "Byt arbetsyta (ditt namn)";
-}
-
-function showSpaceGate() {
-    const gate = $("spaceGate");
-    const input = $("spaceInput");
-    if (!gate) return;
-    gate.hidden = false;
-    if (input) {
-        input.value = nmSpace;
-        setTimeout(() => input.focus(), 50);
-    }
-}
-
-async function applySpace(name) {
-    const clean = String(name || "").trim().slice(0, 60);
-    if (!clean) return false;
-    const changed = clean.toLowerCase() !== nmSpace.toLowerCase();
-    nmSpace = clean;
-    try { localStorage.setItem("nm_space", nmSpace); } catch { /* ignore */ }
-    updateSpaceUi();
-    const gate = $("spaceGate");
-    if (gate) gate.hidden = true;
-    // (Re)load this space's view and live connection.
-    await render();
-    connectStream();
-    if (changed && notificationsEnabled) registerPush();
-    return true;
-}
-
-function initSpaceControls() {
-    const form = $("spaceForm");
-    const input = $("spaceInput");
-    const btn = $("spaceBtn");
-    if (form) {
-        form.addEventListener("submit", (e) => {
-            e.preventDefault();
-            applySpace(input ? input.value : "");
-        });
-    }
-    if (btn) {
-        btn.addEventListener("click", () => {
-            if (authProvidedSpace) {
-                toast("Inloggad", `Du är inloggad som ${nmSpace}. Logga ut i webbläsaren för att byta användare.`, "👤");
-                return;
-            }
-            showSpaceGate();
-        });
-    }
-}
-
 (async function start() {
     initNotifications();
-    initSpaceControls();
+    // Seed the de-dupe map from previously saved alerts so the reconnect
+    // backfill doesn't duplicate larm already in the log.
+    alerts.forEach((a) => recentAlertKeys.set(alertKey(a.id, a.at), Date.now()));
     renderAlertLog();
     scheduleSeen();
 
-    // When logged in through the password gate, the username is the space —
-    // use it directly and skip the in-app name prompt.
-    let me = { space: "" };
-    try { me = await fetch("/api/me").then((r) => r.json()); } catch { /* ignore */ }
-    if (me && me.space) {
-        authProvidedSpace = true;
-        nmSpace = me.space;
-        updateSpaceUi();
-        await render();
-        connectStream();
-        return;
-    }
-
-    // No login identity (e.g. running locally without a password): fall back to
-    // the in-app name prompt.
-    updateSpaceUi();
-    if (nmSpace) {
-        await render();
-        connectStream();
-    } else {
-        showSpaceGate();
-    }
+    await render();
+    connectStream();
 })();

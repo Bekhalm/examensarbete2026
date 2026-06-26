@@ -6,7 +6,7 @@ self.addEventListener("push", (event) => {
         data = {};
     }
     event.waitUntil(
-        self.registration.showNotification(data.title || "Newsroom Monitor", {
+        self.registration.showNotification(data.title || "NewsMonitor", {
             body: data.body || "",
             data: { url: data.url || "/" },
         })

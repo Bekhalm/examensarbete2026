@@ -115,4 +115,4 @@ async function discoverFeeds(pageUrl) {
     return ranked;
 }
 
-module.exports = { discoverFeeds, feedsFromHtml, looksLikeFeed, scoreFeed };
+module.exports = { discoverFeeds, looksLikeFeed };

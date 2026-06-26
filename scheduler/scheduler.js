@@ -98,7 +98,6 @@ module.exports = {
     startScheduler,
     runSchedulerTick,
     // exported for tests:
-    baseIntervalMs,
     effectiveIntervalMs,
     isDue,
 };

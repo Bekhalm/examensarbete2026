@@ -236,6 +236,20 @@ function extractItemsFromFeed(body, sourceUrl) {
     return items;
 }
 
+// Cheerio's .text() concatenates descendant text nodes with no separator, so a
+// headline and a kicker/subheading sitting inside the same card glue together
+// (e.g. "…våldSamtalsstödjarna:"). Insert a space at element boundaries first so
+// the pieces stay readable.
+function readText($, el) {
+    const $clone = $(el).clone();
+    $clone.find("*").each((_, child) => {
+        const $child = $(child);
+        $child.before(" ");
+        $child.after(" ");
+    });
+    return ($clone.text() || "").replace(/\s+/g, " ").trim();
+}
+
 function extractItemsFromHtml(body, sourceUrl, nowIso, selector) {
     const $ = cheerio.load(body);
     const items = [];
@@ -250,7 +264,7 @@ function extractItemsFromHtml(body, sourceUrl, nowIso, selector) {
     scope.find("a[href]").each((_, el) => {
         if (items.length >= config.maxItemsPerCheck) return false;
         const href = $(el).attr("href");
-        const text = ($(el).text() || "").replace(/\s+/g, " ").trim();
+        const text = readText($, el);
         if (!href || text.length < 12) return;
         if (href.startsWith("#") || href.startsWith("javascript:") || href.startsWith("mailto:")) return;
 
@@ -347,7 +361,7 @@ function extractHeadlineItems(body, sourceUrl, nowIso, selector) {
     scope.find(HEADLINE_SELECTOR).each((_, el) => {
         if (items.length >= config.maxItemsPerCheck) return false;
         const $el = $(el);
-        let text = ($el.text() || "").replace(/\s+/g, " ").trim();
+        let text = readText($, el);
         // Strip a trailing video-duration overlay (e.g. '…Frankrike1:01' or
         // '… 2:30') that some player cards glue onto the headline text.
         text = text.replace(/\s*\d{1,2}:\d{2}$/, "").trim();

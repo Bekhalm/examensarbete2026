@@ -4,9 +4,9 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>Newsroom Monitor — bevakning i realtid</title>
+    <title>NewsMonitor — bevakning i realtid</title>
     <link rel="manifest" href="/manifest.webmanifest" />
-    <meta name="apple-mobile-web-app-title" content="Newsroom Monitor" />
+    <meta name="apple-mobile-web-app-title" content="NewsMonitor" />
     <meta name="theme-color" content="#0d0e10" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -22,14 +22,11 @@
     <header class="topbar">
         <div class="brand">
             <span class="live-dot" title="Live"></span>
-            <span class="wordmark">Newsroom<strong>Monitor</strong></span>
+            <span class="wordmark">News<strong>Monitor</strong></span>
             <span class="badge-live"><span class="live-blip">●</span> LIVE</span>
         </div>
         <div class="topbar-right">
             <span class="clock" id="clock">--:--:--</span>
-            <button class="btn btn-ghost space-btn" id="spaceBtn" title="Byt arbetsyta (ditt namn)">
-                <span class="space-ico">👤</span> <span id="spaceName">—</span>
-            </button>
             <button class="icon-btn theme-toggle" id="themeToggle" aria-label="Växla ljust/mörkt tema" title="Byt till ljust tema">🌙</button>
             <div class="volume" title="Notisvolym">
                 <button class="icon-btn vol-btn" id="volBtn" aria-label="Ljud av/på">🔊</button>
@@ -115,18 +112,6 @@
     </div>
 
     <div id="toastWrap" class="toast-wrap" aria-live="polite"></div>
-
-    <div id="spaceGate" class="space-gate" hidden>
-        <div class="space-gate-card">
-            <h2>Vem är du?</h2>
-            <p>Skriv ditt namn eller dina initialer. Då får du din egen lista med källor — dina
-                tillägg syns bara för dig. Redaktionens gemensamma källor delas av alla.</p>
-            <form id="spaceForm" autocomplete="off">
-                <input id="spaceInput" type="text" maxlength="60" placeholder="T.ex. Anna eller AB" />
-                <button type="submit" class="btn btn-accent">Fortsätt</button>
-            </form>
-        </div>
-    </div>
 
     <script src="/app.js" defer></script>
 </body>

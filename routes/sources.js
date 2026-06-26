@@ -6,12 +6,11 @@ const router = express.Router();
 const config = require("../lib/config");
 const logger = require("../lib/logger");
 const { assertSafeUrl } = require("../lib/safeUrl");
-const { normalizeSpace } = require("../lib/space");
 const { discoverFeeds } = require("../services/feeds");
 const notifier = require("../services/notifier");
 const sse = require("../services/sse");
 const {
-    getSourcesForSpace,
+    getAllSources,
     getSourceById,
     addSource,
     toggleSource,
@@ -19,19 +18,9 @@ const {
     deleteAllSources,
     getHistory,
     addPushSubscription,
+    removePushSubscription,
 } = require("../db/database");
 
-// The viewer's personal "space" key. server.js resolves it once (login
-// username when the password gate is on, else the X-Space header/query).
-function getSpace(req) {
-    if (typeof req.space === "string") return req.space;
-    return normalizeSpace(req.get("X-Space") || req.query.space || "");
-}
-
-// A source is visible to a space if it's shared (owner null) or owned by it.
-function visibleToSpace(source, space) {
-    return source && (source.owner == null || source.owner === space);
-}
 const { checkOneSourceById } = require("../services/changeDetector");
 const { effectiveIntervalMs } = require("../scheduler/scheduler");
 
@@ -66,6 +55,7 @@ const discoverSchema = z.object({ url: z.string().trim().url() });
 const subscribeSchema = z.object({
     subscription: z.object({ endpoint: z.string().url() }).passthrough(),
 });
+const unsubscribeSchema = z.object({ endpoint: z.string().url() });
 
 function parseId(req, res) {
     const id = Number(req.params.id);
@@ -121,16 +111,16 @@ function rateLimitCheck(req, res, next) {
     next();
 }
 
-// Who am I? Lets the UI show the logged-in identity and decide whether the
-// in-app name prompt is needed (only when no login username is available).
-router.get("/me", (req, res) => {
-    res.json({ space: getSpace(req) });
+// Recent alerts. Polled by the client as a reliable fallback when the live SSE
+// stream is buffered by a proxy/tunnel.
+router.get("/alerts", (_req, res) => {
+    res.json(sse.recentAlertsAll());
 });
 
 // ---------- sources ----------
-router.get("/sources", async (req, res) => {
+router.get("/sources", async (_req, res) => {
     try {
-        const sources = await getSourcesForSpace(getSpace(req));
+        const sources = await getAllSources();
         res.json(sources.map(withTiming));
     } catch (err) {
         logger.error({ err: err.message }, "list sources failed");
@@ -142,7 +132,7 @@ router.get("/sources/:id", async (req, res) => {
     const id = parseId(req, res);
     if (id === null) return;
     const source = await getSourceById(id);
-    if (!source || !visibleToSpace(source, getSpace(req))) {
+    if (!source) {
         return res.status(404).json({ error: "Hittades inte" });
     }
     res.json(source);
@@ -153,7 +143,7 @@ router.get("/sources/:id/history", async (req, res) => {
     if (id === null) return;
     try {
         const source = await getSourceById(id);
-        if (!source || !visibleToSpace(source, getSpace(req))) {
+        if (!source) {
             return res.status(404).json({ error: "Hittades inte" });
         }
         res.json(await getHistory(id, 50));
@@ -162,12 +152,21 @@ router.get("/sources/:id/history", async (req, res) => {
     }
 });
 
-router.post("/sources", async (req, res) => {
-    const space = getSpace(req);
-    if (!space) {
-        return res.status(400).json({ error: "Ange ditt namn först för att lägga till egna källor" });
+// Normalise a URL for duplicate detection: ignore protocol, a leading "www.",
+// and a trailing slash, but keep the path + query (some sources differ only by
+// query, e.g. the Polisen feed).
+function normalizeForCompare(raw) {
+    try {
+        const u = new URL(raw);
+        const host = u.hostname.toLowerCase().replace(/^www\./, "");
+        const path = u.pathname.replace(/\/+$/, "") || "/";
+        return host + path + u.search;
+    } catch {
+        return String(raw || "").trim().toLowerCase();
     }
+}
 
+router.post("/sources", async (req, res) => {
     let data;
     try {
         data = addSchema.parse(req.body);
@@ -179,6 +178,18 @@ router.post("/sources", async (req, res) => {
         await assertSafeUrl(data.url);
     } catch (err) {
         return res.status(400).json({ error: err.message || "Otillåten URL" });
+    }
+
+    // Warn instead of silently creating a duplicate of a source we already watch.
+    try {
+        const norm = normalizeForCompare(data.url);
+        const existing = await getAllSources();
+        const dup = existing.find((s) => normalizeForCompare(s.url) === norm);
+        if (dup) {
+            return res.status(409).json({ error: `Källan finns redan i listan: "${dup.name}"` });
+        }
+    } catch (err) {
+        logger.debug({ err: err.message }, "duplicate check failed");
     }
 
     // Optional feed auto-discovery (best-effort, non-blocking on failure).
@@ -206,7 +217,6 @@ router.post("/sources", async (req, res) => {
             render_mode: data.render_mode || "static",
             extract_mode: extractMode,
             check_interval_sec: data.check_interval_sec || null,
-            owner: space,
         });
         sse.broadcast("sources-changed", { at: new Date().toISOString() });
         res.status(201).json(source);
@@ -240,15 +250,9 @@ router.post("/sources/:id/toggle", async (req, res) => {
         return validationError(res, err);
     }
     try {
-        const space = getSpace(req);
         const existing = await getSourceById(id);
-        if (!existing || !visibleToSpace(existing, space)) {
+        if (!existing) {
             return res.status(404).json({ error: "Hittades inte" });
-        }
-        // Only the owner may pause/resume a personal source; shared sources are
-        // read-only so no one can pause the newsroom's core watch for everyone.
-        if (existing.owner !== space) {
-            return res.status(403).json({ error: "Delad källa – kan inte ändras" });
         }
         const result = await toggleSource(id, data.isActive);
         if (!result.found) return res.status(404).json({ error: "Hittades inte" });
@@ -259,9 +263,9 @@ router.post("/sources/:id/toggle", async (req, res) => {
     }
 });
 
-router.delete("/sources", async (req, res) => {
+router.delete("/sources", async (_req, res) => {
     try {
-        const result = await deleteAllSources(getSpace(req));
+        const result = await deleteAllSources();
         sse.broadcast("sources-changed", { at: new Date().toISOString() });
         res.json(result);
     } catch (err) {
@@ -274,10 +278,9 @@ router.delete("/sources/:id", async (req, res) => {
     const id = parseId(req, res);
     if (id === null) return;
     try {
-        const result = await deleteSource(id, getSpace(req));
+        const result = await deleteSource(id);
         if (!result.found) return res.status(404).json({ error: "Hittades inte" });
-        if (result.blocked) return res.status(403).json({ error: "Delad källa – kan inte tas bort" });
-        if (result.forbidden) return res.status(403).json({ error: "Tillhör någon annan – kan inte tas bort" });
+        if (result.blocked) return res.status(403).json({ error: "Kärnkälla – kan inte tas bort" });
         sse.broadcast("sources-changed", { at: new Date().toISOString() });
         res.json(result);
     } catch (err) {
@@ -290,7 +293,7 @@ router.post("/sources/:id/check", rateLimitCheck, async (req, res) => {
     if (id === null) return;
     try {
         const existing = await getSourceById(id);
-        if (!existing || !visibleToSpace(existing, getSpace(req))) {
+        if (!existing) {
             return res.status(404).json({ error: "Hittades inte" });
         }
         const result = await checkOneSourceById(id);
@@ -340,10 +343,25 @@ router.post("/push/subscribe", async (req, res) => {
         return validationError(res, err);
     }
     try {
-        await addPushSubscription(data.subscription, getSpace(req));
+        await addPushSubscription(data.subscription);
         res.status(201).json({ ok: true });
     } catch (err) {
         res.status(500).json({ error: "Kunde inte spara prenumeration" });
+    }
+});
+
+router.post("/push/unsubscribe", async (req, res) => {
+    let data;
+    try {
+        data = unsubscribeSchema.parse(req.body);
+    } catch (err) {
+        return validationError(res, err);
+    }
+    try {
+        await removePushSubscription(data.endpoint);
+        res.json({ ok: true });
+    } catch (err) {
+        res.status(500).json({ error: "Kunde inte avregistrera prenumeration" });
     }
 });
 

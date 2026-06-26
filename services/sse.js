@@ -1,9 +1,18 @@
 // Minimal Server-Sent Events hub: keeps a set of open responses and
-// broadcasts named events to connected browsers. Each connection carries the
-// viewer's "space" so personal alerts only reach their owner.
-const { normalizeSpace } = require("../lib/space");
+// broadcasts named events to every connected browser.
+const clients = new Set(); // { res }
 
-const clients = new Set(); // { res, space }
+// Recent alerts kept in memory so a browser that (re)connects can catch up on
+// larm it missed while its live stream was briefly disconnected (common over a
+// flaky tunnel). Push banners are delivered server-side regardless, so this
+// keeps the in-app Larmflöde consistent with the banners people receive.
+const recentAlerts = []; // oldest first
+const MAX_RECENT = 100;
+
+function recordAlert(payload) {
+    recentAlerts.push(payload);
+    if (recentAlerts.length > MAX_RECENT) recentAlerts.shift();
+}
 
 function handler(req, res) {
     res.writeHead(200, {
@@ -15,10 +24,12 @@ function handler(req, res) {
     res.write("retry: 3000\n\n");
     res.write(`event: hello\ndata: ${JSON.stringify({ ok: true })}\n\n`);
 
-    // server.js resolves req.space from the login username (or X-Space/query).
-    const space = typeof req.space === "string" ? req.space : normalizeSpace(req.query.space);
-    const client = { res, space };
+    const client = { res };
     clients.add(client);
+
+    // Catch this client up on recent larm, so the Larmflöde isn't empty after a
+    // reconnect. Sent as a separate "backfill" event the client adds silently.
+    if (recentAlerts.length) write(client, "backfill", recentAlerts.slice());
 
     const keepAlive = setInterval(() => {
         try {
@@ -47,17 +58,16 @@ function broadcast(event, data) {
     for (const client of clients) write(client, event, data);
 }
 
-// Scoped alert: shared sources (owner null) reach everyone; a personal source
-// only reaches connections whose space matches the owner.
+// Deliver an alert to every connected browser.
 function broadcastAlert(payload) {
-    const owner = payload && payload.owner ? payload.owner : null;
-    for (const client of clients) {
-        if (owner === null || client.space === owner) write(client, "alert", payload);
-    }
+    recordAlert(payload);
+    for (const client of clients) write(client, "alert", payload);
 }
 
-function clientCount() {
-    return clients.size;
+// Recent alerts. Used by the polling fallback so the Larmflöde stays reliable
+// even when the live stream is buffered by a proxy/tunnel.
+function recentAlertsAll() {
+    return recentAlerts.slice();
 }
 
-module.exports = { handler, broadcast, broadcastAlert, clientCount };
+module.exports = { handler, broadcast, broadcastAlert, recentAlertsAll };

@@ -1,5 +1,5 @@
 :root {
-    /* Dark — SVT-style neutral near-black (no blue tint), crisp contrast. */
+    /* Dark — neutral near-black (no blue tint), crisp contrast. */
     --bg: #0d0e10;
     --bg-2: #121316;
     --surface: #17181c;
@@ -24,7 +24,7 @@
     --sans: "Inter", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
 }
 
-/* Light theme — SVT-style: crisp white surfaces, near-black text, light-grey
+/* Light theme — crisp white surfaces, near-black text, light-grey
    page background, soft hairline borders. Clean and flat. */
 :root[data-theme="light"] {
     --bg: #ffffff;
@@ -74,7 +74,7 @@ body {
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    /* SVT-style flat background — just a whisper of accent at the very top. */
+    /* Flat background — just a whisper of accent at the very top. */
     background:
         radial-gradient(1100px 420px at 80% -12%, var(--accent-soft), transparent 60%),
         var(--bg);
@@ -283,79 +283,6 @@ body {
     background: transparent;
 }
 
-/* Personal-space switcher in the top bar. */
-.space-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    max-width: 180px;
-}
-
-.space-btn #spaceName {
-    font-weight: 600;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-/* First-run name gate. */
-.space-gate {
-    position: fixed;
-    inset: 0;
-    z-index: 80;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(6px);
-}
-
-.space-gate-card {
-    width: min(440px, 100%);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    padding: 28px;
-}
-
-.space-gate-card h2 {
-    margin: 0 0 10px;
-    font-family: var(--serif);
-    font-size: 24px;
-    color: var(--text);
-}
-
-.space-gate-card p {
-    margin: 0 0 18px;
-    color: var(--muted);
-    font-size: 14px;
-    line-height: 1.55;
-}
-
-.space-gate-card form {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.space-gate-card input {
-    flex: 1 1 200px;
-    font-family: var(--sans);
-    font-size: 15px;
-    color: var(--text);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 11px 13px;
-}
-
-.space-gate-card input:focus {
-    outline: none;
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
-}
 
 /* Notifications enabled: subtle green "on" state. */
 .btn.on {
@@ -456,9 +383,9 @@ body {
 /* ---------- Panels ---------- */
 .layout {
     display: grid;
-    /* Alerts ("Larmflöde") is the primary content, so it gets just slightly
-       more room than the sources column — nearly even. */
-    grid-template-columns: 1.4fr 1.5fr;
+    /* The sources column needs a touch more room so the row actions (incl. the
+       trash button) are always visible; alerts stays close behind. */
+    grid-template-columns: 1.7fr 1.4fr;
     gap: 18px;
     align-items: start;
 }

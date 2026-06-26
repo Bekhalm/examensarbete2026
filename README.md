@@ -1,4 +1,4 @@
-# Newsroom Monitor (MVP)
+# NewsMonitor
 
 A simple monitoring tool for journalists: add news sites and get notified when content appears to be updated.
 
