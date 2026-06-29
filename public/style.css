@@ -9,19 +9,18 @@
     --text: #f4f5f7;
     --muted: #9aa0aa;
     --muted-2: #6b6f78;
-    --accent: #ff2e4d;
-    --accent-soft: rgba(255, 46, 77, 0.15);
-    --accent-strong: #ff5470;
-    --accent-2: #ff5fa2;
-    /* Signal gradient — youthful red→pink, used on primary actions + brand. */
-    --grad-accent: linear-gradient(135deg, #ff2e4d 0%, #ff5fa2 100%);
+    --accent: #f5283b;
+    --accent-soft: rgba(245, 40, 59, 0.13);
+    --accent-strong: #ff4d5e;
+    /* Brand gradient — red-only, deliberately subtle. Reserved for the wordmark. */
+    --grad-accent: linear-gradient(135deg, #ff4d5e 0%, #d81a2c 100%);
     --live: #22e58a;
     --live-soft: rgba(34, 229, 138, 0.15);
     --amber: #ffb02e;
-    --radius: 16px;
-    --radius-sm: 11px;
-    --shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-    --glow-accent: 0 8px 26px rgba(255, 46, 77, 0.35);
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    --glow-accent: 0 4px 14px rgba(245, 40, 59, 0.25);
     --topbar-bg: rgba(9, 10, 14, 0.72);
     --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
     --serif: "Space Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -43,13 +42,12 @@
     --accent: #f5283b;
     --accent-soft: rgba(245, 40, 59, 0.09);
     --accent-strong: #d61f31;
-    --accent-2: #e0469a;
-    --grad-accent: linear-gradient(135deg, #f5283b 0%, #ff5fa2 100%);
+    --grad-accent: linear-gradient(135deg, #f5283b 0%, #c4172a 100%);
     --live: #11a35c;
     --live-soft: rgba(17, 163, 92, 0.12);
     --amber: #b87600;
-    --shadow: 0 18px 44px rgba(15, 18, 24, 0.12);
-    --glow-accent: 0 8px 22px rgba(245, 40, 59, 0.22);
+    --shadow: 0 16px 40px rgba(15, 18, 24, 0.1);
+    --glow-accent: 0 4px 12px rgba(245, 40, 59, 0.18);
     --topbar-bg: rgba(255, 255, 255, 0.78);
 }
 
@@ -81,27 +79,11 @@ body {
     inset: 0;
     z-index: 0;
     pointer-events: none;
-    /* Layered aurora — soft signal-coloured glows that quietly drift. */
+    /* Calm, static background — a single quiet glow at the top, nothing moving.
+       A monitoring dashboard wants stillness so the eye catches new alerts. */
     background:
-        radial-gradient(900px 380px at 82% -14%, var(--accent-soft), transparent 62%),
-        radial-gradient(760px 420px at 8% 4%, rgba(255, 95, 162, 0.08), transparent 60%),
-        radial-gradient(700px 500px at 50% 120%, rgba(34, 229, 138, 0.05), transparent 60%),
+        radial-gradient(1000px 400px at 80% -14%, var(--accent-soft), transparent 60%),
         var(--bg);
-}
-
-.bg-grid::before {
-    content: "";
-    position: absolute;
-    inset: -20%;
-    background:
-        radial-gradient(420px 420px at 20% 30%, rgba(255, 46, 77, 0.06), transparent 70%),
-        radial-gradient(380px 380px at 80% 60%, rgba(255, 95, 162, 0.05), transparent 70%);
-    animation: auroraDrift 26s ease-in-out infinite alternate;
-}
-
-@keyframes auroraDrift {
-    0% { transform: translate3d(0, 0, 0) scale(1); }
-    100% { transform: translate3d(2%, -2%, 0) scale(1.08); }
 }
 
 .bg-grid::after {
@@ -112,12 +94,8 @@ body {
         linear-gradient(var(--border-soft) 1px, transparent 1px),
         linear-gradient(90deg, var(--border-soft) 1px, transparent 1px);
     background-size: 52px 52px;
-    opacity: 0.1;
+    opacity: 0.08;
     mask-image: radial-gradient(120% 80% at 50% 0%, #000 0%, transparent 75%);
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .bg-grid::before { animation: none; }
 }
 
 /* ---------- Top bar ---------- */
@@ -166,7 +144,7 @@ body {
     font-weight: 600;
     letter-spacing: 2px;
     color: var(--accent-strong);
-    border: 1px solid rgba(255, 46, 77, 0.4);
+    border: 1px solid rgba(245, 40, 59, 0.4);
     background: var(--accent-soft);
     padding: 3px 9px;
     border-radius: 999px;
@@ -192,7 +170,7 @@ body {
     height: 11px;
     border-radius: 50%;
     background: var(--accent);
-    box-shadow: 0 0 0 0 rgba(255, 46, 77, 0.6);
+    box-shadow: 0 0 0 0 rgba(245, 40, 59, 0.6);
     animation: pulse 1.8s infinite;
     flex: none;
 }
@@ -206,9 +184,9 @@ body {
 }
 
 @keyframes pulse {
-    0% { box-shadow: 0 0 0 0 rgba(255, 46, 77, 0.55); }
-    70% { box-shadow: 0 0 0 9px rgba(255, 46, 77, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(255, 46, 77, 0); }
+    0% { box-shadow: 0 0 0 0 rgba(245, 40, 59, 0.55); }
+    70% { box-shadow: 0 0 0 9px rgba(245, 40, 59, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(245, 40, 59, 0); }
 }
 
 @keyframes pulse-green {
@@ -308,20 +286,19 @@ body {
     color: var(--text);
     background: var(--surface-2);
     border: 1px solid var(--border);
-    border-radius: 999px;
-    padding: 9px 16px;
+    border-radius: var(--radius-sm);
+    padding: 9px 15px;
     cursor: pointer;
-    transition: transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+    transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
 
 .btn:hover {
     border-color: var(--muted-2);
     background: var(--surface);
-    transform: translateY(-1px);
 }
 
 .btn:active {
-    transform: translateY(0);
+    transform: translateY(0.5px);
 }
 
 .btn-ghost {
@@ -367,16 +344,15 @@ body {
 
 .btn-accent {
     position: relative;
-    background: var(--grad-accent);
-    border-color: transparent;
+    background: var(--accent);
+    border-color: var(--accent);
     color: #fff;
     box-shadow: var(--glow-accent);
 }
 
 .btn-accent:hover {
-    border-color: transparent;
-    filter: brightness(1.06) saturate(1.05);
-    box-shadow: 0 12px 30px rgba(255, 46, 77, 0.45);
+    background: var(--accent-strong);
+    border-color: var(--accent-strong);
 }
 
 .btn-mini {
@@ -386,7 +362,7 @@ body {
 
 .btn.danger {
     color: var(--accent-strong);
-    border-color: rgba(255, 46, 77, 0.4);
+    border-color: rgba(245, 40, 59, 0.4);
 }
 
 .btn.danger:hover {
@@ -485,7 +461,7 @@ body {
     overflow: hidden;
 }
 
-/* Hairline of signal colour along the top edge of each card. */
+/* A single hairline along the top edge of each card — solid, no gradient. */
 .panel::before {
     content: "";
     position: absolute;
@@ -493,12 +469,11 @@ body {
     left: 0;
     right: 0;
     height: 2px;
-    background: var(--grad-accent);
-    opacity: 0.8;
+    background: var(--accent);
 }
 
 .alerts-panel::before {
-    background: linear-gradient(135deg, var(--live), #38bdf8);
+    background: var(--live);
 }
 
 .panel-head {
@@ -781,18 +756,17 @@ tr.flash {
     color: var(--muted);
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
     padding: 6px 10px;
     cursor: pointer;
     white-space: nowrap;
-    transition: color 0.15s, border-color 0.15s, background 0.15s, transform 0.12s ease;
+    transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 
 .icon-btn:hover {
     color: var(--text);
     border-color: var(--muted-2);
     background: var(--surface-2);
-    transform: translateY(-1px);
 }
 
 .icon-btn.spinning {
@@ -982,7 +956,7 @@ tr.row-collapsed {
     color: var(--muted);
     background: transparent;
     border: 1px solid var(--border);
-    border-radius: 999px;
+    border-radius: var(--radius-sm);
     padding: 6px;
     cursor: pointer;
     opacity: 0.7;
@@ -1137,8 +1111,8 @@ tr.group-row.drop-target td {
     font-size: 30px;
     border-radius: 50%;
     background: var(--accent-soft);
-    border: 1px solid rgba(255, 46, 77, 0.25);
-    box-shadow: 0 0 0 6px rgba(255, 46, 77, 0.05);
+    border: 1px solid rgba(245, 40, 59, 0.25);
+    box-shadow: 0 0 0 6px rgba(245, 40, 59, 0.05);
 }
 
 /* ---------- Alerts panel ---------- */
@@ -1171,7 +1145,7 @@ tr.group-row.drop-target td {
     margin-top: 6px;
     border-radius: 50%;
     background: var(--accent);
-    box-shadow: 0 0 8px rgba(255, 46, 77, 0.6);
+    box-shadow: 0 0 8px rgba(245, 40, 59, 0.6);
     transition: background 0.3s ease;
 }
 
@@ -1254,10 +1228,7 @@ tr.group-row.drop-target td {
     font-weight: 700;
     font-size: 13px;
     letter-spacing: 0.08em;
-    background: var(--grad-accent);
-    -webkit-background-clip: text;
-    background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: var(--muted);
 }
 
 .muted {
@@ -1289,7 +1260,7 @@ tr.group-row.drop-target td {
     box-shadow: var(--shadow);
     backdrop-filter: blur(10px);
     overflow: hidden;
-    animation: toastIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    animation: toastIn 0.28s ease;
 }
 
 .toast::before {
@@ -1299,7 +1270,7 @@ tr.group-row.drop-target td {
     top: 0;
     bottom: 0;
     width: 3px;
-    background: var(--grad-accent);
+    background: var(--accent);
 }
 
 .toast.out {
@@ -1397,7 +1368,7 @@ tr.group-row.drop-target td {
 
 .icon-btn.danger:hover {
     color: var(--accent-strong);
-    border-color: rgba(255, 46, 77, 0.5);
+    border-color: rgba(245, 40, 59, 0.5);
 }
 
 /* ---------- Modal ---------- */
@@ -1575,7 +1546,7 @@ tr.group-row.drop-target td {
 }
 .user-chip:hover {
     color: var(--accent-strong);
-    border-color: rgba(255, 46, 77, 0.5);
+    border-color: rgba(245, 40, 59, 0.5);
     background: var(--accent-soft);
 }
 .user-chip:focus-visible {
