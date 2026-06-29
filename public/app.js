@@ -20,12 +20,55 @@ let mutedSourceIds = new Set();
 let dragSourceId = null;
 let dragSourceGroup = null;
 
+// Folders the user has folded shut. Persisted so the layout stays put across
+// the periodic re-renders and page reloads. "__ungrouped__" = the permanent set.
+const COLLAPSE_KEY = "nm_collapsed_groups";
+let collapsedGroups = new Set();
+try {
+    collapsedGroups = new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "[]").map(String));
+} catch { /* ignore corrupt value */ }
+function isCollapsed(id) { return collapsedGroups.has(String(id)); }
+function setCollapsed(id, on) {
+    if (on) collapsedGroups.add(String(id));
+    else collapsedGroups.delete(String(id));
+    try { localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsedGroups])); } catch { /* ignore */ }
+}
+
 // =====================
 // Helpers
 // =====================
 function $(id) {
     return document.getElementById(id);
 }
+
+// ---------------------------------------------------------------------------
+// Icons. Inline stroke SVGs (Lucide-style) instead of emoji — they inherit the
+// current text colour, stay crisp at any size, and read as a polished product
+// rather than OS emoji art. `svg()` wraps a set of paths; `ICON` is the set.
+// ---------------------------------------------------------------------------
+function svg(paths, { size = 18, stroke = 1.75, fill = "none" } = {}) {
+    return `<svg class="ic" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill}" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+}
+const ICON = {
+    folder: svg('<path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.7-.9l-.8-1.2A2 2 0 0 0 7.9 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>'),
+    chevron: svg('<path d="m9 18 6-6-6-6"/>'),
+    bell: svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/>'),
+    bellOff: svg('<path d="M8.7 3A6 6 0 0 1 18 8c0 1.6.2 3 .5 4.1"/><path d="M17 17H3s3-2 3-9a6 6 0 0 1 .7-2.9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/><path d="m2 2 20 20"/>'),
+    trash: svg('<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M10 11v6"/><path d="M14 11v6"/>'),
+    pencil: svg('<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>'),
+    lock: svg('<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>'),
+    user: svg('<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>'),
+    sun: svg('<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>'),
+    moon: svg('<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>'),
+    volume2: svg('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/>'),
+    volume1: svg('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/>'),
+    volumeX: svg('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>'),
+    zap: svg('<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>'),
+    rss: svg('<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/>'),
+    broadcast: svg('<path d="M4.9 19.1a10 10 0 0 1 0-14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M19.1 4.9a10 10 0 0 1 0 14.2"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>'),
+    alert: svg('<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>'),
+    grip: svg('<circle cx="9" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.4" fill="currentColor" stroke="none"/>'),
+};
 function pad(n) {
     return String(n).padStart(2, "0");
 }
@@ -142,17 +185,16 @@ let lastNonZeroVolume = notifVolume > 0 ? notifVolume : 0.5;
 const MAX_BEEP_GAIN = 1.0; // full-slider loudness (compressor keeps it clean)
 
 function volumeIcon(v) {
-    if (v <= 0) return "🔇";
-    if (v < 0.34) return "🔈";
-    if (v < 0.67) return "🔉";
-    return "🔊";
+    if (v <= 0) return ICON.volumeX;
+    if (v < 0.5) return ICON.volume1;
+    return ICON.volume2;
 }
 function syncVolumeUi() {
     const slider = $("volSlider");
     const btn = $("volBtn");
     if (slider) slider.value = String(Math.round(notifVolume * 100));
     if (btn) {
-        btn.textContent = volumeIcon(notifVolume);
+        btn.innerHTML = volumeIcon(notifVolume);
         btn.title = notifVolume <= 0 ? "Ljud av" : `Volym ${Math.round(notifVolume * 100)}%`;
     }
 }
@@ -269,18 +311,18 @@ function updateNotifUi() {
     if (status) status.classList.remove("warn", "ok", "bad");
     const denied = "Notification" in window && Notification.permission === "denied";
     if (notificationsEnabled) {
-        btn.innerHTML = '<span class="bell">🔔</span> Notiser på · klicka för att stänga av';
+        btn.innerHTML = `<span class="bell">${ICON.bell}</span> Notiser på · klicka för att stänga av`;
         btn.classList.add("on");
         btn.classList.remove("needs-action");
         btn.title = "Notiser och ljud är på. Klicka för att stänga av notiser på den här enheten.";
         if (status) status.textContent = "";
     } else if (denied) {
-        btn.innerHTML = '<span class="bell">🔕</span> Notiser blockerade';
+        btn.innerHTML = `<span class="bell">${ICON.bellOff}</span> Notiser blockerade`;
         btn.classList.remove("on", "needs-action");
         btn.title = "Tillåt notiser i webbläsarens inställningar för att få larm.";
         if (status) { status.textContent = "Blockerade i webbläsaren"; status.classList.add("bad"); }
     } else {
-        btn.innerHTML = '<span class="bell">🔔</span> Aktivera ljud & notiser';
+        btn.innerHTML = `<span class="bell">${ICON.bell}</span> Aktivera ljud & notiser`;
         btn.classList.add("needs-action");
         btn.classList.remove("on");
         btn.title = "Klicka här för att slå på ljud och banner-notiser – annars får du inga larm.";
@@ -322,7 +364,7 @@ $("enableNotifs").addEventListener("click", toggleNotifications);
     const apply = (theme) => {
         document.documentElement.dataset.theme = theme;
         if (btn) {
-            btn.textContent = theme === "light" ? "☀️" : "🌙";
+            btn.innerHTML = theme === "light" ? ICON.sun : ICON.moon;
             btn.title = theme === "light" ? "Byt till mörkt tema" : "Byt till ljust tema";
         }
     };
@@ -394,12 +436,15 @@ async function unregisterPush() {
 // =====================
 // Toasts
 // =====================
-function toast(title, body, emoji = "🚨") {
+function toast(title, body, icon = ICON.broadcast) {
     const wrap = $("toastWrap");
     const el = document.createElement("div");
     el.className = "toast";
     el.innerHTML = `<span class="toast-emoji"></span><div><div class="toast-title"></div><div class="toast-body"></div></div>`;
-    el.querySelector(".toast-emoji").textContent = emoji;
+    const iconEl = el.querySelector(".toast-emoji");
+    // SVG icons arrive as markup; legacy plain strings still render as text.
+    if (typeof icon === "string" && icon.trim().startsWith("<")) iconEl.innerHTML = icon;
+    else iconEl.textContent = icon;
     el.querySelector(".toast-title").textContent = title;
     el.querySelector(".toast-body").textContent = body;
     wrap.appendChild(el);
@@ -596,7 +641,7 @@ function setupDropZone() {
             await assignSourceGroup(sid, targetGid ? Number(targetGid) : null);
             await render();
         } catch (err) {
-            toast("Fel", err.message, "⚠️");
+            toast("Fel", err.message, ICON.alert);
         }
     });
 }
@@ -618,7 +663,7 @@ function renderRow(s) {
     if (groups.length) {
         const handle = document.createElement("span");
         handle.className = "drag-handle";
-        handle.textContent = "⠿";
+        handle.innerHTML = ICON.grip;
         handle.title = "Dra för att flytta till en annan mapp";
         handle.draggable = true;
         handle.addEventListener("dragstart", (e) => {
@@ -650,7 +695,10 @@ function renderRow(s) {
     a.href = s.url;
     a.target = "_blank";
     a.rel = "noreferrer";
-    a.textContent = s.extract_mode === "ticker" ? `⚡ ${s.url}` : (s.feed_url ? `📡 ${s.feed_url}` : s.url);
+    const urlText = s.extract_mode === "ticker" ? s.url : (s.feed_url || s.url);
+    const urlIcon = s.extract_mode === "ticker" ? ICON.zap : (s.feed_url ? ICON.rss : "");
+    a.innerHTML = urlIcon;
+    a.appendChild(document.createTextNode((urlIcon ? " " : "") + urlText));
     const hb = document.createElement("div");
     hb.className = "heartbeat";
     hb.dataset.checked = s.last_checked_at || "";
@@ -667,7 +715,7 @@ function renderRow(s) {
         pick.className = "group-pick";
         const lbl = document.createElement("span");
         lbl.className = "group-pick-label";
-        lbl.textContent = "🗂 Mapp:";
+        lbl.innerHTML = `${ICON.folder} Mapp:`;
         const gsel = document.createElement("select");
         gsel.className = "group-select";
         gsel.title = "Välj vilken mapp källan ligger i";
@@ -680,7 +728,7 @@ function renderRow(s) {
                 await assignSourceGroup(s.id, gsel.value ? Number(gsel.value) : null);
                 await render();
             } catch (err) {
-                toast("Fel", err.message, "⚠️");
+                toast("Fel", err.message, ICON.alert);
                 gsel.disabled = false;
             }
         });
@@ -709,7 +757,7 @@ function renderRow(s) {
             await toggleSource(s.id, cb.checked);
             await render();
         } catch (err) {
-            toast("Fel", err.message, "⚠️");
+            toast("Fel", err.message, ICON.alert);
             cb.checked = !cb.checked;
             cb.disabled = false;
         }
@@ -725,13 +773,13 @@ function renderRow(s) {
         // Core source: no delete button, just a lock so it reads as protected.
         const lock = document.createElement("span");
         lock.className = "perm-lock";
-        lock.textContent = "🔒";
+        lock.innerHTML = ICON.lock;
         lock.title = "Permanent källa – kan inte tas bort";
         actions.appendChild(lock);
     } else {
         const delBtn = document.createElement("button");
-        delBtn.className = "icon-btn danger";
-        delBtn.textContent = "🗑";
+        delBtn.className = "icon-btn danger icon-only";
+        delBtn.innerHTML = ICON.trash;
         delBtn.title = "Ta bort källa";
         delBtn.addEventListener("click", async () => {
             const ok = await confirmDialog({
@@ -743,9 +791,9 @@ function renderRow(s) {
             try {
                 await removeSource(s.id);
                 await render();
-                toast("Källa borttagen", s.name, "🗑");
+                toast("Källa borttagen", s.name, ICON.trash);
             } catch (err) {
-                toast("Fel", err.message, "⚠️");
+                toast("Fel", err.message, ICON.alert);
             }
         });
         actions.appendChild(delBtn);
@@ -756,22 +804,38 @@ function renderRow(s) {
     return tr;
 }
 
-function groupHeaderRow(g) {
+function groupHeaderRow(g, count = 0) {
+    const collapsed = isCollapsed(g.id);
     const tr = document.createElement("tr");
-    tr.className = "group-row" + (g.notify ? "" : " muted");
+    tr.className = "group-row" + (g.notify ? "" : " muted") + (collapsed ? " collapsed" : "");
     tr.dataset.groupId = String(g.id);
     const td = document.createElement("td");
     td.colSpan = 4;
     const wrap = document.createElement("div");
     wrap.className = "group-head";
 
+    // Chevron doubles as the fold/unfold control for the whole folder.
+    const caret = document.createElement("button");
+    caret.className = "group-caret";
+    caret.innerHTML = ICON.chevron;
+    caret.title = collapsed ? "Visa källor" : "Dölj källor";
+    caret.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    caret.addEventListener("click", () => toggleGroupCollapse(tr, String(g.id), caret));
+
     const icon = document.createElement("span");
     icon.className = "group-icon";
-    icon.textContent = "🗂";
+    icon.innerHTML = ICON.folder;
 
-    const name = document.createElement("span");
-    name.className = "group-name";
+    const name = document.createElement("button");
+    name.className = "group-name group-name-btn";
     name.textContent = g.name;
+    name.title = collapsed ? "Visa källor" : "Dölj källor";
+    name.addEventListener("click", () => toggleGroupCollapse(tr, String(g.id), caret));
+
+    const count_badge = document.createElement("span");
+    count_badge.className = "group-count";
+    count_badge.textContent = String(count);
+    count_badge.title = `${count} ${count === 1 ? "källa" : "källor"} i mappen`;
 
     const spacer = document.createElement("span");
     spacer.className = "group-spacer";
@@ -779,7 +843,7 @@ function groupHeaderRow(g) {
     // Clearly labelled on/off button — the main action for a bevakning.
     const toggle = document.createElement("button");
     toggle.className = "group-toggle" + (g.notify ? " on" : " off");
-    toggle.innerHTML = `<span class="gt-ico">${g.notify ? "🔔" : "🔕"}</span><span class="gt-text">${g.notify ? "Notiser på" : "Tystad"}</span>`;
+    toggle.innerHTML = `<span class="gt-ico">${g.notify ? ICON.bell : ICON.bellOff}</span><span class="gt-text">${g.notify ? "Notiser på" : "Tystad"}</span>`;
     toggle.title = g.notify
         ? "Notiser på – klicka för att tysta hela mappen (du slutar få larm härifrån)"
         : "Tystad – klicka för att börja få larm härifrån igen";
@@ -789,14 +853,14 @@ function groupHeaderRow(g) {
             await patchGroup(g.id, { notify: !g.notify });
             await render();
         } catch (err) {
-            toast("Fel", err.message, "⚠️");
+            toast("Fel", err.message, ICON.alert);
             toggle.disabled = false;
         }
     });
 
     const rename = document.createElement("button");
     rename.className = "group-action";
-    rename.textContent = "✏️";
+    rename.innerHTML = ICON.pencil;
     rename.title = "Byt namn på mappen";
     rename.addEventListener("click", async () => {
         const next = await openGroupModal({ title: "Byt namn på mapp", value: g.name });
@@ -805,13 +869,13 @@ function groupHeaderRow(g) {
             await patchGroup(g.id, { name: next });
             await render();
         } catch (err) {
-            toast("Fel", err.message, "⚠️");
+            toast("Fel", err.message, ICON.alert);
         }
     });
 
     const del = document.createElement("button");
     del.className = "group-action danger";
-    del.textContent = "🗑";
+    del.innerHTML = ICON.trash;
     del.title = "Ta bort mappen och dess källor";
     del.addEventListener("click", async () => {
         const ok = await confirmDialog({
@@ -825,33 +889,65 @@ function groupHeaderRow(g) {
             await render();
             const n = res && res.deletedSources ? res.deletedSources : 0;
             const detail = n ? `${g.name} · ${n} ${n === 1 ? "källa" : "källor"} borttagna` : g.name;
-            toast("Mapp borttagen", detail, "🗑");
+            toast("Mapp borttagen", detail, ICON.trash);
         } catch (err) {
-            toast("Fel", err.message, "⚠️");
+            toast("Fel", err.message, ICON.alert);
         }
     });
 
-    wrap.append(icon, name, spacer, toggle, rename, del);
+    wrap.append(caret, icon, name, count_badge, spacer, toggle, rename, del);
     td.appendChild(wrap);
     tr.appendChild(td);
     return tr;
 }
 
-function ungroupedHeaderRow() {
+function ungroupedHeaderRow(count = 0) {
+    const collapsed = isCollapsed("__ungrouped__");
     const tr = document.createElement("tr");
-    tr.className = "group-row ungrouped";
-    tr.dataset.groupId = "";
+    tr.className = "group-row ungrouped" + (collapsed ? " collapsed" : "");
+    tr.dataset.groupId = "__ungrouped__";
     const td = document.createElement("td");
     td.colSpan = 4;
     const wrap = document.createElement("div");
     wrap.className = "group-head";
-    const name = document.createElement("span");
-    name.className = "group-name muted";
+
+    const caret = document.createElement("button");
+    caret.className = "group-caret";
+    caret.innerHTML = ICON.chevron;
+    caret.title = collapsed ? "Visa källor" : "Dölj källor";
+    caret.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    caret.addEventListener("click", () => toggleGroupCollapse(tr, "__ungrouped__", caret));
+
+    const name = document.createElement("button");
+    name.className = "group-name muted group-name-btn";
     name.textContent = "Permanenta källor";
-    wrap.append(name);
+    name.addEventListener("click", () => toggleGroupCollapse(tr, "__ungrouped__", caret));
+
+    const count_badge = document.createElement("span");
+    count_badge.className = "group-count";
+    count_badge.textContent = String(count);
+
+    wrap.append(caret, name, count_badge);
     td.appendChild(wrap);
     tr.appendChild(td);
     return tr;
+}
+
+// Fold/unfold a folder: flip the header state, persist it, and show/hide every
+// source row up to the next header. Avoids a full re-render so it feels instant.
+function toggleGroupCollapse(headerTr, id, caret) {
+    const willCollapse = !headerTr.classList.contains("collapsed");
+    headerTr.classList.toggle("collapsed", willCollapse);
+    setCollapsed(id, willCollapse);
+    if (caret) {
+        caret.title = willCollapse ? "Visa källor" : "Dölj källor";
+        caret.setAttribute("aria-expanded", willCollapse ? "false" : "true");
+    }
+    let row = headerTr.nextElementSibling;
+    while (row && !row.classList.contains("group-row")) {
+        row.classList.toggle("row-collapsed", willCollapse);
+        row = row.nextElementSibling;
+    }
 }
 
 function renderSources(sources) {
@@ -885,16 +981,24 @@ function renderSources(sources) {
         else ungrouped.push(s);
     }
     for (const g of groups) {
-        body.appendChild(groupHeaderRow(g));
-        for (const s of buckets.get(g.id)) {
+        const bucket = buckets.get(g.id);
+        body.appendChild(groupHeaderRow(g, bucket.length));
+        const folded = isCollapsed(g.id);
+        for (const s of bucket) {
             const row = renderRow(s);
             if (!g.notify) row.classList.add("in-muted-group");
+            if (folded) row.classList.add("row-collapsed");
             body.appendChild(row);
         }
     }
     if (ungrouped.length) {
-        body.appendChild(ungroupedHeaderRow());
-        for (const s of ungrouped) body.appendChild(renderRow(s));
+        body.appendChild(ungroupedHeaderRow(ungrouped.length));
+        const folded = isCollapsed("__ungrouped__");
+        for (const s of ungrouped) {
+            const row = renderRow(s);
+            if (folded) row.classList.add("row-collapsed");
+            body.appendChild(row);
+        }
     }
 }
 
@@ -931,11 +1035,11 @@ function populateAddGroupSelect() {
     if (!field || !sel) return;
     const prev = sel.value;
     sel.innerHTML = "";
-    sel.appendChild(new Option("🗂 Välj mapp", ""));
+    sel.appendChild(new Option("Välj mapp…", ""));
     for (const g of groups) sel.appendChild(new Option(g.name, String(g.id)));
     // Always offer an inline "create map" entry so a new källa can be filed into
     // a brand-new map without leaving the form.
-    sel.appendChild(new Option("➕ Skapa ny mapp…", "__new__"));
+    sel.appendChild(new Option("+ Skapa ny mapp…", "__new__"));
     if (prev && groups.some((g) => String(g.id) === prev)) sel.value = prev;
     field.hidden = false;
 }
@@ -1032,7 +1136,7 @@ function backfillAlerts(list) {
         scheduleSeen();
         if (firstBackfillDone && notificationsEnabled) {
             beep();
-            toast("Nya larm", `${newCount} larm medan anslutningen var nere`, "🚨");
+            toast("Nya larm", `${newCount} larm medan anslutningen var nere`, ICON.broadcast);
         }
     }
     firstBackfillDone = true;
@@ -1060,7 +1164,7 @@ async function pollAlerts() {
             scheduleSeen();
             if (firstPollDone && notificationsEnabled) {
                 beep();
-                toast("Nya larm", `${newCount} ${newCount === 1 ? "nytt larm" : "nya larm"}`, "🚨");
+                toast("Nya larm", `${newCount} ${newCount === 1 ? "nytt larm" : "nya larm"}`, ICON.broadcast);
             }
         }
         setLive(true);
@@ -1164,7 +1268,7 @@ function handleAlert(payload, { sound = true } = {}) {
     if (sound) beep();
     const title = payload.name || "Källa";
     const body = payload.latest_item_title || "Uppdatering upptäckt";
-    toast(title, body, "🚨");
+    toast(title, body, ICON.broadcast);
     notify(title, body);
 }
 
@@ -1336,7 +1440,7 @@ function openAddSourcesModal(group, sources) {
             for (const id of ids) {
                 try { await assignSourceGroup(id, group.id); n += 1; } catch { /* ignore */ }
             }
-            if (n) toast("Källor tillagda", `${n} ${n === 1 ? "källa" : "källor"} i ${group.name}`, "🗂");
+            if (n) toast("Källor tillagda", `${n} ${n === 1 ? "källa" : "källor"} i ${group.name}`, ICON.folder);
             resolve();
         }
         function onSkip() { cleanup(); resolve(); }
@@ -1357,7 +1461,7 @@ if (newGroupBtn) {
         if (name == null) return;
         try {
             const created = await createGroup(name);
-            toast("Mapp skapad", name, "🗂");
+            toast("Mapp skapad", name, ICON.folder);
             // Next step: let them fill the new map with existing källor right away.
             let srcs = [];
             try { srcs = await fetchSources(); } catch { /* ignore */ }
@@ -1366,7 +1470,7 @@ if (newGroupBtn) {
             }
             await render();
         } catch (err) {
-            toast("Fel", err.message, "⚠️");
+            toast("Fel", err.message, ICON.alert);
         }
     });
 }
@@ -1374,12 +1478,19 @@ if (newGroupBtn) {
 // =====================
 // Add-source form
 // =====================
-$("addForm").addEventListener("submit", async (e) => {
-    e.preventDefault();
+// Reads the add-källa form, creates the source, files it into the chosen map,
+// and resets the form. Returns true on success. Reusable so the inline
+// "create map" flow can finish the add in one step.
+async function submitAddSource() {
     const errEl = $("formError");
     errEl.hidden = true;
     const name = $("name").value.trim();
     const url = $("url").value.trim();
+    if (!name || !url) {
+        errEl.textContent = "Fyll i både namn och adress.";
+        errEl.hidden = false;
+        return false;
+    }
     const groupSel = $("addGroup");
     let groupVal = groupSel ? groupSel.value : "";
     if (groupVal === "__new__") groupVal = ""; // sentinel, not a real map
@@ -1390,7 +1501,7 @@ $("addForm").addEventListener("submit", async (e) => {
             try {
                 await assignSourceGroup(created.id, Number(groupVal));
             } catch (assignErr) {
-                toast("Obs", `Källan lades till men kunde inte läggas i mappen: ${assignErr.message}`, "⚠️");
+                toast("Obs", `Källan lades till men kunde inte läggas i mappen: ${assignErr.message}`, ICON.alert);
             }
         }
         $("name").value = "";
@@ -1401,29 +1512,43 @@ $("addForm").addEventListener("submit", async (e) => {
             ? `${name} bevakas som live-ticker`
             : created.feed_url ? `${name} (RSS hittades)` : `${name} bevakas nu`;
         const how = mapName ? `${base} · i mappen "${mapName}"` : base;
-        toast("Källa tillagd", how, created.extract_mode === "ticker" ? "⚡" : "📡");
+        toast("Källa tillagd", how, created.extract_mode === "ticker" ? ICON.zap : ICON.rss);
+        return true;
     } catch (err) {
         errEl.textContent = err.message || "Kunde inte lägga till källa";
         errEl.hidden = false;
+        return false;
     }
+}
+
+$("addForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    submitAddSource();
 });
 
-// Picking "Skapa ny mapp…" in the add-källa picker creates a map inline and
-// selects it, so the källa you're adding lands straight in the new map.
+// Picking "Skapa ny mapp…" in the add-källa picker creates the map inline. If
+// the user has already typed a källa, we finish the whole thing in one go and
+// file it straight into the new map — no second click needed.
 const addGroupSel = $("addGroup");
 if (addGroupSel) {
     addGroupSel.addEventListener("change", async () => {
         if (addGroupSel.value !== "__new__") return;
         addGroupSel.value = "";
-        const name = await openGroupModal({ title: "Ny mapp" });
-        if (name == null) return;
+        const mapName = await openGroupModal({ title: "Ny mapp" });
+        if (mapName == null) return;
+        let created;
         try {
-            const created = await createGroup(name);
+            created = await createGroup(mapName);
             await render();
             if (created && created.id) addGroupSel.value = String(created.id);
-            toast("Mapp skapad", name, "🗂");
+            toast("Mapp skapad", mapName, ICON.folder);
         } catch (err) {
-            toast("Fel", err.message, "⚠️");
+            toast("Fel", err.message, ICON.alert);
+            return;
+        }
+        // If a källa is already filled in, add it into the new map right away.
+        if ($("name").value.trim() && $("url").value.trim()) {
+            await submitAddSource();
         }
     });
 }
@@ -1461,7 +1586,7 @@ function setUser(username) {
     const ub = $("userBox");
     const chip = $("userChip");
     if (username) {
-        if (chip) chip.textContent = "👤 " + username;
+        if (chip) { chip.innerHTML = ICON.user; chip.appendChild(document.createTextNode(" " + username)); }
         if (ub) ub.hidden = false;
         // If a different person last used this browser, drop the cached larm so
         // they don't briefly see someone else's feed (server backfill refills it).

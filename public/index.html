@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-        href="https://fonts.googleapis.com/css2?family=Spectral:ital,wght@0,600;0,800;1,500&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap"
         rel="stylesheet" />
     <link rel="stylesheet" href="/style.css" />
 </head>
@@ -27,14 +27,14 @@
         </div>
         <div class="topbar-right">
             <span class="clock" id="clock">--:--:--</span>
-            <button class="icon-btn theme-toggle" id="themeToggle" aria-label="Växla ljust/mörkt tema" title="Byt till ljust tema">🌙</button>
+            <button class="icon-btn theme-toggle" id="themeToggle" aria-label="Växla ljust/mörkt tema" title="Byt till ljust tema"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg></button>
             <div class="volume" title="Notisvolym">
-                <button class="icon-btn vol-btn" id="volBtn" aria-label="Ljud av/på">🔊</button>
+                <button class="icon-btn vol-btn" id="volBtn" aria-label="Ljud av/på"><svg class="ic" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 5 6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M19 5a10 10 0 0 1 0 14"/></svg></button>
                 <input type="range" id="volSlider" class="vol-slider" min="0" max="100" step="1" value="50"
                     aria-label="Volym" />
             </div>
             <button class="btn btn-ghost" id="enableNotifs">
-                <span class="bell">🔔</span> Aktivera notiser
+                <span class="bell"><svg class="ic" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.9 1.9 0 0 0 3.4 0"/></svg></span> Aktivera notiser
             </button>
             <span class="notif-status" id="notifStatus"></span>
             <div class="user-box" id="userBox" hidden>
@@ -79,7 +79,7 @@
 
                 <div id="sourcesWrap" class="sources-wrap">
                     <div class="empty" id="emptyState">
-                        <div class="empty-icon">📡</div>
+                        <div class="empty-icon"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.9 19.1a10 10 0 0 1 0-14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M19.1 4.9a10 10 0 0 1 0 14.2"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/></svg></div>
                         <p>Inga källor ännu. Lägg till den första sajten du vill bevaka.</p>
                     </div>
                     <table class="sources-table" id="sourcesTable" hidden>
@@ -120,7 +120,7 @@
         <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
             <div class="modal-head">
                 <h3 id="modalTitle">Historik</h3>
-                <button class="icon-btn" data-close>✕</button>
+                <button class="icon-btn icon-only" data-close aria-label="Stäng"><svg class="ic" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
             </div>
             <div class="modal-body" id="modalBody"></div>
         </div>
