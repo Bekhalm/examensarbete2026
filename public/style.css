@@ -454,18 +454,15 @@ body {
     overflow: hidden;
 }
 
-/* A single hairline along the top edge of each card — solid, no gradient. */
-.panel::before {
+/* Only the live alerts feed gets a top hairline — green, because it marks the
+   one panel that's actually "live". The sources panel stays clean. */
+.alerts-panel::before {
     content: "";
     position: absolute;
     top: 0;
     left: 0;
     right: 0;
     height: 2px;
-    background: var(--accent);
-}
-
-.alerts-panel::before {
     background: var(--live);
 }
 
