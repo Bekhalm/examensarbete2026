@@ -394,15 +394,8 @@ body {
 .btn .ic,
 .group-toggle .ic,
 .group-pick-label .ic,
-.source-url .ic,
 .user-chip .ic {
     vertical-align: -0.2em;
-}
-
-.source-url .ic {
-    width: 13px;
-    height: 13px;
-    opacity: 0.8;
 }
 
 .group-pick-label .ic {
@@ -711,8 +704,16 @@ tr.flash {
     color: var(--text);
 }
 
+/* Method tag + URL share one line; the tag is fixed, the URL truncates. */
+.source-sub {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    margin-top: 3px;
+}
+
 .source-url {
-    display: block;
     font-family: var(--mono);
     font-size: 11.5px;
     color: var(--muted-2);
@@ -720,11 +721,53 @@ tr.flash {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+    min-width: 0;
     max-width: 220px;
 }
 
 .source-url:hover {
     color: var(--muted);
+}
+
+/* Monitoring-method tag: small uppercase chip with a labelled icon. */
+.source-type {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    flex: none;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 2px 6px;
+    white-space: nowrap;
+}
+
+.source-type .ic {
+    width: 11px;
+    height: 11px;
+}
+
+/* Ticker = amber (fast/live); RSS = its conventional orange; page = neutral. */
+.source-type.ticker {
+    color: var(--amber);
+    border-color: rgba(255, 176, 46, 0.3);
+    background: rgba(255, 176, 46, 0.08);
+}
+
+.source-type.rss {
+    color: #e8702a;
+    border-color: rgba(232, 112, 42, 0.32);
+    background: rgba(232, 112, 42, 0.08);
+}
+
+.source-type.page {
+    color: var(--muted-2);
 }
 
 .time-cell {

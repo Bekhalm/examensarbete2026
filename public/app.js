@@ -65,6 +65,9 @@ const ICON = {
     volumeX: svg('<path d="M11 5 6 9H2v6h4l5 4z"/><path d="m22 9-6 6M16 9l6 6"/>'),
     zap: svg('<path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z"/>'),
     rss: svg('<path d="M4 11a9 9 0 0 1 9 9"/><path d="M4 4a16 16 0 0 1 16 16"/><circle cx="5" cy="19" r="1" fill="currentColor" stroke="none"/>'),
+    // The classic squared "feed" badge — unmistakably RSS (not a wifi symbol).
+    rssBadge: svg('<rect x="4" y="4" width="16" height="16" rx="3.5"/><circle cx="8.5" cy="15.5" r="1.3" fill="currentColor" stroke="none"/><path d="M7.5 11a5.5 5.5 0 0 1 5.5 5.5"/><path d="M7.5 7.5a9 9 0 0 1 9 9"/>'),
+    globe: svg('<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18 14 14 0 0 1 0-18"/>'),
     broadcast: svg('<path d="M4.9 19.1a10 10 0 0 1 0-14.2M7.8 16.2a6 6 0 0 1 0-8.4M16.2 7.8a6 6 0 0 1 0 8.4M19.1 4.9a10 10 0 0 1 0 14.2"/><circle cx="12" cy="12" r="2" fill="currentColor" stroke="none"/>'),
     alert: svg('<path d="m21.7 18-8-14a2 2 0 0 0-3.4 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.7-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/>'),
     grip: svg('<circle cx="9" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="9" cy="18" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="6" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="12" r="1.4" fill="currentColor" stroke="none"/><circle cx="15" cy="18" r="1.4" fill="currentColor" stroke="none"/>'),
@@ -695,10 +698,32 @@ function renderRow(s) {
     a.href = s.url;
     a.target = "_blank";
     a.rel = "noreferrer";
-    const urlText = s.extract_mode === "ticker" ? s.url : (s.feed_url || s.url);
-    const urlIcon = s.extract_mode === "ticker" ? ICON.zap : (s.feed_url ? ICON.rss : "");
-    a.innerHTML = urlIcon;
-    a.appendChild(document.createTextNode((urlIcon ? " " : "") + urlText));
+    a.textContent = s.extract_mode === "ticker" ? s.url : (s.feed_url || s.url);
+
+    // Method tag: spells out how the source is watched so the icon is never
+    // ambiguous (the RSS glyph used to read as a wifi symbol).
+    const typeTag = document.createElement("span");
+    typeTag.className = "source-type";
+    if (s.extract_mode === "ticker") {
+        typeTag.classList.add("ticker");
+        typeTag.innerHTML = ICON.zap;
+        typeTag.appendChild(document.createTextNode("Ticker"));
+        typeTag.title = "Bevakas som live-ticker – sidans innehåll läses av löpande";
+    } else if (s.feed_url) {
+        typeTag.classList.add("rss");
+        typeTag.innerHTML = ICON.rssBadge;
+        typeTag.appendChild(document.createTextNode("RSS"));
+        typeTag.title = "Bevakas via RSS-flöde";
+    } else {
+        typeTag.classList.add("page");
+        typeTag.innerHTML = ICON.globe;
+        typeTag.appendChild(document.createTextNode("Sida"));
+        typeTag.title = "Bevakas som webbsida – sidan kontrolleras för nytt innehåll";
+    }
+    const sub = document.createElement("div");
+    sub.className = "source-sub";
+    sub.append(typeTag, a);
+
     const hb = document.createElement("div");
     hb.className = "heartbeat";
     hb.dataset.checked = s.last_checked_at || "";
@@ -706,7 +731,7 @@ function renderRow(s) {
     hb.dataset.active = s.is_active === 1 ? "1" : "0";
     hb.textContent = heartbeatText(s.last_checked_at, s.next_check_at, s.is_active === 1);
     meta.appendChild(nm);
-    meta.appendChild(a);
+    meta.appendChild(sub);
     meta.appendChild(hb);
     // Let the user file this source into one of their bevakningar. Only shown
     // once they actually have a group to file it into.
@@ -1512,7 +1537,7 @@ async function submitAddSource() {
             ? `${name} bevakas som live-ticker`
             : created.feed_url ? `${name} (RSS hittades)` : `${name} bevakas nu`;
         const how = mapName ? `${base} · i mappen "${mapName}"` : base;
-        toast("Källa tillagd", how, created.extract_mode === "ticker" ? ICON.zap : ICON.rss);
+        toast("Källa tillagd", how, created.extract_mode === "ticker" ? ICON.zap : ICON.rssBadge);
         return true;
     } catch (err) {
         errEl.textContent = err.message || "Kunde inte lägga till källa";
