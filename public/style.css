@@ -438,9 +438,10 @@ body {
 /* ---------- Panels ---------- */
 .layout {
     display: grid;
-    /* The sources column needs a touch more room so the row actions (incl. the
-       trash button) are always visible; alerts stays close behind. */
-    grid-template-columns: 1.7fr 1.4fr;
+    /* The sources table only needs about its content width; sizing the panel to
+       that keeps "Larmade" right next to the source (no big middle gap), and the
+       freed-up space goes to the alert feed, which benefits from longer lines. */
+    grid-template-columns: 1.4fr 1.6fr;
     gap: 18px;
     align-items: start;
 }
@@ -582,13 +583,28 @@ body {
 /* ---------- Sources table ---------- */
 .sources-wrap {
     padding: 12px 8px 8px;
-    overflow-x: auto;
 }
 
 .sources-table {
     width: 100%;
     border-collapse: collapse;
+    /* Fixed layout lets the Källa column truncate to fit instead of forcing a
+       fat min-width; this keeps "Larmade" right next to the source and the row
+       controls fully visible at every panel width. */
+    table-layout: fixed;
 }
+
+.col-status {
+    width: 88px;
+}
+.col-notified {
+    width: 116px;
+}
+.col-actions {
+    width: 96px;
+}
+/* col-source is intentionally left flexible: it absorbs the remaining width and
+   its contents (name + URL) truncate with an ellipsis. */
 
 .sources-table th {
     text-align: left;
@@ -699,6 +715,11 @@ tr.flash {
     font-weight: 600;
     font-size: 14px;
     color: var(--text);
+    display: block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* Method tag + URL share one line; the tag is fixed, the URL truncates. */
@@ -719,7 +740,6 @@ tr.flash {
     overflow: hidden;
     text-overflow: ellipsis;
     min-width: 0;
-    max-width: 220px;
 }
 
 .source-url:hover {
@@ -957,25 +977,42 @@ tr.row-collapsed {
     flex: 1;
 }
 
-/* The on/off button — labelled so its purpose is obvious. */
+/* The on/off button — labelled so its purpose is obvious, but kept compact so
+   it sits neatly next to the rename/delete icons. */
 .group-toggle {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font-size: 12px;
+    gap: 5px;
+    font-size: 11px;
     font-weight: 600;
     background: transparent;
     border: 1px solid var(--border);
     border-radius: 999px;
-    padding: 4px 11px;
+    padding: 3px 9px;
     cursor: pointer;
     white-space: nowrap;
     transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
+.group-toggle .ic {
+    width: 12px;
+    height: 12px;
+}
+
+/* "On" is the normal state, so keep it light (outline only); only the bell is
+   tinted. "Off" (muted) is the exception, so it gets a filled chip to stand out. */
 .group-toggle.on {
     border-color: var(--live);
+    color: var(--muted);
+    background: transparent;
+}
+
+.group-toggle.on .gt-ico {
     color: var(--live);
+}
+
+.group-toggle.on:hover {
+    color: var(--text);
     background: var(--live-soft);
 }
 
@@ -985,7 +1022,7 @@ tr.row-collapsed {
     background: var(--accent-soft);
 }
 
-.group-toggle:hover {
+.group-toggle.off:hover {
     filter: brightness(1.12);
 }
 

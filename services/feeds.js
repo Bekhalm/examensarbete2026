@@ -1,6 +1,7 @@
 const cheerio = require("cheerio");
 const { fetchUrl } = require("../lib/http");
 const logger = require("../lib/logger");
+const { resolveSverigesRadioFeed } = require("../lib/srResolver");
 
 const COMMON_FEED_PATHS = ["/rss", "/rss.xml", "/feed", "/feed.xml", "/atom.xml", "/index.xml", "/feeds/all.atom.xml"];
 
@@ -65,6 +66,13 @@ function feedsFromHtml(html, pageUrl) {
 
 // Full discovery: parse the page, then probe common paths, validate, and rank.
 async function discoverFeeds(pageUrl) {
+    // Sveriges Radio pages 403 our monitor, but every channel news desk has a
+    // clean api.sr.se feed. Short-circuit to it before even fetching the page.
+    const sr = resolveSverigesRadioFeed(pageUrl);
+    if (sr) {
+        return [{ url: sr.feedUrl, title: "Sveriges Radio", type: "atom", verified: true, self: false, score: 100 }];
+    }
+
     const candidates = new Map(); // url -> {url,title,type}
 
     let html = null;

@@ -15,6 +15,9 @@ const recentAlertKeys = new Map(); // de-dupe local vs SSE alerts
 let groups = [];
 let groupsById = new Map();
 let mutedSourceIds = new Set();
+// Name of a brand-new map the user typed in the add-källa picker. It is NOT
+// created in the backend until they actually press "+ Lägg till källa".
+let pendingNewMapName = null;
 
 // Drag-and-drop: which source is being dragged and which bevakning it came from.
 let dragSourceId = null;
@@ -1062,10 +1065,16 @@ function populateAddGroupSelect() {
     sel.innerHTML = "";
     sel.appendChild(new Option("Välj mapp…", ""));
     for (const g of groups) sel.appendChild(new Option(g.name, String(g.id)));
+    // A map the user typed but hasn't committed yet — shown as selected so the
+    // picker reflects their choice without creating anything in the backend.
+    if (pendingNewMapName) {
+        sel.appendChild(new Option(`${pendingNewMapName} (ny mapp)`, "__pending__"));
+    }
     // Always offer an inline "create map" entry so a new källa can be filed into
     // a brand-new map without leaving the form.
     sel.appendChild(new Option("+ Skapa ny mapp…", "__new__"));
-    if (prev && groups.some((g) => String(g.id) === prev)) sel.value = prev;
+    if (pendingNewMapName) sel.value = "__pending__";
+    else if (prev && groups.some((g) => String(g.id) === prev)) sel.value = prev;
     field.hidden = false;
 }
 
@@ -1518,21 +1527,41 @@ async function submitAddSource() {
     }
     const groupSel = $("addGroup");
     let groupVal = groupSel ? groupSel.value : "";
-    if (groupVal === "__new__") groupVal = ""; // sentinel, not a real map
+    // Resolve which map the källa should land in. "__pending__" means the user
+    // typed a new map name in the picker; we only create it now, on submit.
+    let newMapName = null;
+    if (groupVal === "__pending__") {
+        newMapName = pendingNewMapName;
+        groupVal = "";
+    } else if (groupVal === "__new__") {
+        groupVal = ""; // sentinel, not a real map
+    }
     try {
         const created = await addSource({ name, url });
-        // File it straight into the chosen map, if one was picked.
-        if (groupVal) {
+        // Create the pending map now that the källa exists, then file it in.
+        let targetGroupId = groupVal ? Number(groupVal) : null;
+        let mapName = targetGroupId && groupsById.get(targetGroupId) ? groupsById.get(targetGroupId).name : null;
+        if (newMapName) {
             try {
-                await assignSourceGroup(created.id, Number(groupVal));
+                const createdGroup = await createGroup(newMapName);
+                targetGroupId = createdGroup.id;
+                mapName = newMapName;
+            } catch (groupErr) {
+                toast("Obs", `Källan lades till men mappen kunde inte skapas: ${groupErr.message}`, ICON.alert);
+            }
+        }
+        // File it straight into the chosen map, if one was resolved.
+        if (targetGroupId) {
+            try {
+                await assignSourceGroup(created.id, targetGroupId);
             } catch (assignErr) {
                 toast("Obs", `Källan lades till men kunde inte läggas i mappen: ${assignErr.message}`, ICON.alert);
             }
         }
+        pendingNewMapName = null;
         $("name").value = "";
         $("url").value = "";
         await render();
-        const mapName = groupVal && groupsById.get(Number(groupVal)) ? groupsById.get(Number(groupVal)).name : null;
         const base = created.extract_mode === "ticker"
             ? `${name} bevakas som live-ticker`
             : created.feed_url ? `${name} (RSS hittades)` : `${name} bevakas nu`;
@@ -1551,30 +1580,18 @@ $("addForm").addEventListener("submit", (e) => {
     submitAddSource();
 });
 
-// Picking "Skapa ny mapp…" in the add-källa picker creates the map inline. If
-// the user has already typed a källa, we finish the whole thing in one go and
-// file it straight into the new map — no second click needed.
+// Picking "Skapa ny mapp…" in the add-källa picker only stages the map name.
+// Nothing is created until the user presses "+ Lägg till källa" — then the map
+// and the källa are committed together.
 const addGroupSel = $("addGroup");
 if (addGroupSel) {
     addGroupSel.addEventListener("change", async () => {
         if (addGroupSel.value !== "__new__") return;
-        addGroupSel.value = "";
+        addGroupSel.value = pendingNewMapName ? "__pending__" : "";
         const mapName = await openGroupModal({ title: "Ny mapp" });
-        if (mapName == null) return;
-        let created;
-        try {
-            created = await createGroup(mapName);
-            await render();
-            if (created && created.id) addGroupSel.value = String(created.id);
-            toast("Mapp skapad", mapName, ICON.folder);
-        } catch (err) {
-            toast("Fel", err.message, ICON.alert);
-            return;
-        }
-        // If a källa is already filled in, add it into the new map right away.
-        if ($("name").value.trim() && $("url").value.trim()) {
-            await submitAddSource();
-        }
+        if (mapName == null) return; // cancelled — keep previous selection
+        pendingNewMapName = mapName.trim() || null;
+        populateAddGroupSelect();
     });
 }
 // Live heartbeat: update the "checked Xs ago · next in Ym" text in place every

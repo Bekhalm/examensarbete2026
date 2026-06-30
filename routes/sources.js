@@ -7,6 +7,7 @@ const config = require("../lib/config");
 const logger = require("../lib/logger");
 const { assertSafeUrl } = require("../lib/safeUrl");
 const { discoverFeeds } = require("../services/feeds");
+const { resolveSverigesRadioFeed } = require("../lib/srResolver");
 const notifier = require("../services/notifier");
 const sse = require("../services/sse");
 const {
@@ -205,7 +206,12 @@ router.post("/sources", async (req, res) => {
     const extractMode = data.extract_mode || autoDetectExtractMode(data.url);
     const isTicker = extractMode === "ticker";
     let feedUrl = null;
-    if (data.discoverFeed !== false && !isTicker) {
+    // Sveriges Radio pages 403 our monitor; map them straight to the matching
+    // api.sr.se news feed (same approach that makes "Ekot" work).
+    const sr = resolveSverigesRadioFeed(data.url);
+    if (sr && !isTicker) {
+        feedUrl = sr.feedUrl;
+    } else if (data.discoverFeed !== false && !isTicker) {
         try {
             const feeds = await discoverFeeds(data.url);
             const best = feeds.find((f) => f.verified || f.self) || feeds[0];
