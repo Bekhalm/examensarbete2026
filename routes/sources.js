@@ -7,7 +7,7 @@ const config = require("../lib/config");
 const logger = require("../lib/logger");
 const { assertSafeUrl } = require("../lib/safeUrl");
 const { discoverFeeds } = require("../services/feeds");
-const { resolveSverigesRadioFeed } = require("../lib/srResolver");
+const { resolveSverigesRadioFeed, P4_CATALOG } = require("../lib/srResolver");
 const notifier = require("../services/notifier");
 const sse = require("../services/sse");
 const {
@@ -43,9 +43,19 @@ function withTiming(s) {
 }
 
 // ---------- validation ----------
+// People routinely paste a bare host ("www.dn.se") or omit the scheme; treat a
+// missing protocol as https:// so it isn't rejected as an invalid URL.
+const urlField = (msg = "ogiltig URL") =>
+    z.preprocess((v) => {
+        if (typeof v !== "string") return v;
+        const s = v.trim();
+        if (!s || /^https?:\/\//i.test(s)) return s;
+        return "https://" + s.replace(/^\/+/, "");
+    }, z.string().trim().url(msg));
+
 const addSchema = z.object({
     name: z.string().trim().min(1, "namn krävs").max(120),
-    url: z.string().trim().url("ogiltig URL"),
+    url: urlField(),
     selector: z.string().trim().max(200).optional(),
     render_mode: z.enum(["static", "js"]).optional(),
     extract_mode: z.enum(["auto", "ticker"]).optional(),
@@ -53,7 +63,7 @@ const addSchema = z.object({
     discoverFeed: z.boolean().optional(),
 });
 const toggleSchema = z.object({ isActive: z.boolean() });
-const discoverSchema = z.object({ url: z.string().trim().url() });
+const discoverSchema = z.object({ url: urlField() });
 const subscribeSchema = z.object({
     subscription: z.object({ endpoint: z.string().url() }).passthrough(),
 });
@@ -122,6 +132,14 @@ router.get("/alerts", async (req, res) => {
         logger.error({ err: err.message }, "list alerts failed");
         res.status(500).json({ error: "Databasfel" });
     }
+});
+
+// ---------- radio channels ----------
+// Static catalog of P4 channels the UI lists with a one-click on/off switch.
+// The actual monitoring reuses ordinary sources (pointed at the api.sr.se feed),
+// so there's no per-channel server state to keep here.
+router.get("/radio/channels", (req, res) => {
+    res.json(P4_CATALOG);
 });
 
 // ---------- sources ----------

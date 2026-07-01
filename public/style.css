@@ -879,12 +879,31 @@ tr.flash {
     background: rgba(255, 255, 255, 0.03);
 }
 
+/* Three aligned lanes — name | notifications | actions — with fixed widths on
+   the right two so every folder header lines up into tidy columns. */
 .group-head {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 128px 76px;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 12px;
+    border-left: 3px solid var(--accent);
+}
+
+/* Lane 1: caret + icon + name + count, left-aligned and able to truncate. */
+.group-head-main {
     display: flex;
     align-items: center;
     gap: 9px;
-    padding: 10px 12px;
-    border-left: 3px solid var(--accent);
+    min-width: 0;
+}
+
+/* Lane 3: rename/delete grouped, hugging the right edge. */
+.group-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    justify-self: end;
 }
 
 .group-row.ungrouped .group-head {
@@ -902,6 +921,10 @@ tr.flash {
     font-size: 13px;
     letter-spacing: 0.3px;
     color: var(--text);
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 /* The name is a button so the whole label folds/unfolds the folder. */
@@ -973,10 +996,6 @@ tr.row-collapsed {
     display: none;
 }
 
-.group-spacer {
-    flex: 1;
-}
-
 /* The on/off button — labelled so its purpose is obvious, but kept compact so
    it sits neatly next to the rename/delete icons. */
 .group-toggle {
@@ -991,6 +1010,7 @@ tr.row-collapsed {
     padding: 3px 9px;
     cursor: pointer;
     white-space: nowrap;
+    justify-self: end;
     transition: border-color 0.15s, background 0.15s, color 0.15s;
 }
 
@@ -1026,6 +1046,209 @@ tr.row-collapsed {
     filter: brightness(1.12);
 }
 
+/* ---------- View toggle (Lista / Mappar) ---------- */
+.view-toggle {
+    display: inline-flex;
+    flex-shrink: 0;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+    gap: 2px;
+}
+
+.view-toggle .seg {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 12px;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: color 0.15s ease, background 0.15s ease;
+}
+
+.view-toggle .seg:hover {
+    color: var(--text);
+}
+
+.view-toggle .seg.active {
+    background: var(--accent-soft);
+    color: var(--accent-strong);
+}
+
+/* ---------- Folder grid ("app folders") ---------- */
+.sources-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 16px 20px 20px;
+    max-height: 62vh;
+    overflow-y: auto;
+}
+
+/* `display: grid` above outranks the UA [hidden] rule, so hide it explicitly. */
+.sources-grid[hidden] {
+    display: none;
+}
+
+.folder-tile {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-align: left;
+    min-height: 118px;
+    background: var(--bg-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 15px;
+    cursor: pointer;
+    color: var(--text);
+    font: inherit;
+    transition: border-color 0.15s ease, background 0.15s ease, transform 0.1s ease;
+}
+
+.folder-tile:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+.folder-tile:active {
+    transform: scale(0.985);
+}
+
+.folder-tile.muted {
+    opacity: 0.62;
+}
+
+.tile-head {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    min-width: 0;
+}
+
+.tile-icon {
+    display: inline-flex;
+    color: var(--muted);
+    flex-shrink: 0;
+}
+
+.tile-icon .ic {
+    width: 18px;
+    height: 18px;
+}
+
+.tile-name {
+    font-weight: 700;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+
+.tile-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.tile-count {
+    font-size: 11px;
+    color: var(--muted-2);
+}
+
+.tile-badge {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.3px;
+    padding: 2px 7px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    text-transform: uppercase;
+}
+
+.tile-badge.on {
+    border-color: var(--live);
+    color: var(--live);
+    background: var(--live-soft);
+}
+
+.tile-badge.off {
+    border-color: var(--accent);
+    color: var(--accent-strong);
+    background: var(--accent-soft);
+}
+
+.tile-badge.muted {
+    opacity: 0.8;
+}
+
+.tile-preview {
+    margin-top: auto;
+    font-size: 11px;
+    color: var(--muted);
+    line-height: 1.45;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.tile-preview.empty {
+    color: var(--muted-2);
+    font-style: italic;
+}
+
+/* ---------- Folder drill-in (back link inside the table) ---------- */
+.folder-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--muted);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 5px 11px 5px 8px;
+    cursor: pointer;
+    transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.folder-back:hover {
+    color: var(--text);
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+
+/* Back arrow = a flipped chevron. */
+.folder-back .ic {
+    width: 14px;
+    height: 14px;
+    transform: rotate(180deg);
+}
+
+.folder-back-title {
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.folder-empty {
+    padding: 22px 20px;
+    text-align: center;
+    color: var(--muted-2);
+    font-size: 13px;
+}
+
 .group-action {
     display: inline-flex;
     align-items: center;
@@ -1059,6 +1282,39 @@ tr.row-collapsed {
 /* Sources inside a muted group read as dimmed/parked. */
 tr.in-muted-group {
     opacity: 0.5;
+}
+
+/* Built-in "P4-kanaler" folder. */
+.radio-head-hint {
+    justify-self: end;
+    font-size: 11px;
+    color: var(--muted);
+    padding: 2px 8px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+/* On/off pill in the channel's status column. */
+.radio-state {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+}
+.radio-state.on {
+    color: var(--live);
+    border-color: var(--live);
+}
+.radio-state.off {
+    color: var(--muted);
+}
+
+/* Off channels read as parked, like paused sources. */
+.radio-channel-row.inactive {
+    opacity: 0.6;
 }
 
 /* Drag handle to move a source between bevakningar. */
@@ -1569,9 +1825,6 @@ tr.group-row.drop-target td {
 @media (max-width: 620px) {
     .source-url {
         display: none;
-    }
-    .hero h1 {
-        font-size: 30px;
     }
     .lede {
         font-size: 15px;

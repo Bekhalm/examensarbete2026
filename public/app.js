@@ -19,6 +19,23 @@ let mutedSourceIds = new Set();
 // created in the backend until they actually press "+ Lägg till källa".
 let pendingNewMapName = null;
 
+// Sveriges Radio P4 channel catalog, fetched once. Shown as a built-in folder
+// where each channel has an on/off switch. "On" creates/activates a source for
+// the channel's feed; "off" pauses it (kept, so re-enabling is instant).
+let radioChannels = [];
+let radioFeedSet = new Set(); // feed URLs that belong to a P4 channel
+const RADIO_GROUP_ID = "__radio__";
+
+// Sources panel can be shown as a flat list (default) or as a grid of folder
+// tiles you drill into ("app folders"). Persisted per browser.
+const SOURCES_VIEW_KEY = "nm_sources_view";
+let sourcesView = "list";
+try {
+    const v = localStorage.getItem(SOURCES_VIEW_KEY);
+    if (v === "grid" || v === "list") sourcesView = v;
+} catch { /* ignore */ }
+let gridOpenFolder = null; // which folder tile is opened (group id / "__ungrouped__" / "__radio__")
+
 // Drag-and-drop: which source is being dragged and which bevakning it came from.
 let dragSourceId = null;
 let dragSourceGroup = null;
@@ -30,6 +47,16 @@ let collapsedGroups = new Set();
 try {
     collapsedGroups = new Set(JSON.parse(localStorage.getItem(COLLAPSE_KEY) || "[]").map(String));
 } catch { /* ignore corrupt value */ }
+// The P4-kanaler folder is long, so it starts folded. Only force this once, so
+// we still respect the user's choice after they open it.
+const RADIO_INIT_KEY = "nm_radio_collapsed_init";
+if (!localStorage.getItem(RADIO_INIT_KEY)) {
+    collapsedGroups.add("__radio__");
+    try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify([...collapsedGroups]));
+        localStorage.setItem(RADIO_INIT_KEY, "1");
+    } catch { /* ignore */ }
+}
 function isCollapsed(id) { return collapsedGroups.has(String(id)); }
 function setCollapsed(id, on) {
     if (on) collapsedGroups.add(String(id));
@@ -267,10 +294,21 @@ function beep() {
 function previewBeep() {
     beep();
 }
-function notify(title, body) {
+function notify(title, body, url) {
     if (!notificationsEnabled || !("Notification" in window)) return;
     try {
-        new Notification(title, { body });
+        const n = new Notification(title, { body });
+        // Clicking the OS banner opens the article we alerted on in a new tab.
+        // Falls back to just focusing the app when we don't have a link.
+        n.onclick = (e) => {
+            e.preventDefault();
+            if (url) {
+                window.open(url, "_blank", "noopener,noreferrer");
+            } else {
+                window.focus();
+            }
+            n.close();
+        };
     } catch {
         /* ignore */
     }
@@ -477,6 +515,19 @@ async function fetchSources() {
     const res = await apiFetch("/api/sources");
     if (!res.ok) throw new Error("Kunde inte hämta källor");
     return res.json();
+}
+async function fetchRadioChannels() {
+    // Catalog is static; fetch once and cache.
+    if (radioChannels.length) return radioChannels;
+    try {
+        const res = await apiFetch("/api/radio/channels");
+        if (!res.ok) return [];
+        radioChannels = await res.json();
+        radioFeedSet = new Set(radioChannels.map((c) => c.feedUrl));
+    } catch {
+        /* leave empty — panel just won't show */
+    }
+    return radioChannels;
 }
 async function toggleSource(id, isActive) {
     const res = await apiFetch(`/api/sources/${id}/toggle`, {
@@ -865,9 +916,6 @@ function groupHeaderRow(g, count = 0) {
     count_badge.textContent = String(count);
     count_badge.title = `${count} ${count === 1 ? "källa" : "källor"} i mappen`;
 
-    const spacer = document.createElement("span");
-    spacer.className = "group-spacer";
-
     // Clearly labelled on/off button — the main action for a bevakning.
     const toggle = document.createElement("button");
     toggle.className = "group-toggle" + (g.notify ? " on" : " off");
@@ -923,7 +971,15 @@ function groupHeaderRow(g, count = 0) {
         }
     });
 
-    wrap.append(caret, icon, name, count_badge, spacer, toggle, rename, del);
+    // Three aligned lanes: name (left), notifications, actions — so every
+    // folder header lines up into tidy columns.
+    const main = document.createElement("div");
+    main.className = "group-head-main";
+    main.append(caret, icon, name, count_badge);
+    const actions = document.createElement("div");
+    actions.className = "group-actions";
+    actions.append(rename, del);
+    wrap.append(main, toggle, actions);
     td.appendChild(wrap);
     tr.appendChild(td);
     return tr;
@@ -955,7 +1011,10 @@ function ungroupedHeaderRow(count = 0) {
     count_badge.className = "group-count";
     count_badge.textContent = String(count);
 
-    wrap.append(caret, name, count_badge);
+    const main = document.createElement("div");
+    main.className = "group-head-main";
+    main.append(caret, name, count_badge);
+    wrap.append(main);
     td.appendChild(wrap);
     tr.appendChild(td);
     return tr;
@@ -978,36 +1037,75 @@ function toggleGroupCollapse(headerTr, id, caret) {
     }
 }
 
-function renderSources(sources) {
+function renderSources(allSources) {
     const tableEl = $("sourcesTable");
     const emptyEl = $("emptyState");
     const body = $("sourcesBody");
-    if (!sources.length) {
+    const grid = $("sourcesGrid");
+
+    // P4 channels live in their own built-in folder, so keep them out of the
+    // ordinary source list (otherwise they'd appear twice).
+    const sources = allSources.filter((s) => !(s.feed_url && radioFeedSet.has(s.feed_url)));
+    const radioByFeed = new Map();
+    for (const s of allSources) {
+        if (s.feed_url && radioFeedSet.has(s.feed_url)) radioByFeed.set(s.feed_url, s);
+    }
+
+    // Empty only when there are neither ordinary sources nor a radio catalog.
+    if (!sources.length && !radioChannels.length) {
         tableEl.hidden = true;
+        if (grid) grid.hidden = true;
         emptyEl.hidden = false;
         return;
     }
     emptyEl.hidden = true;
-    tableEl.hidden = false;
-    setupDropZone();
-    body.innerHTML = "";
 
     const sorted = sources
         .slice()
         .sort((a, b) => (b.last_notified_at || "").localeCompare(a.last_notified_at || ""));
 
-    // No groups yet: keep the original flat list.
-    if (!groups.length) {
-        sorted.forEach((s) => body.appendChild(renderRow(s)));
-        return;
-    }
-
+    // Bucket sources by folder (shared by both views).
     const buckets = new Map(groups.map((g) => [g.id, []]));
     const ungrouped = [];
     for (const s of sorted) {
         if (s.group_id != null && buckets.has(s.group_id)) buckets.get(s.group_id).push(s);
         else ungrouped.push(s);
     }
+
+    // A drilled-into folder that no longer exists falls back to the overview.
+    if (gridOpenFolder != null && !Number.isNaN(Number(gridOpenFolder)) &&
+        /^\d+$/.test(String(gridOpenFolder)) && !groupsById.has(Number(gridOpenFolder))) {
+        gridOpenFolder = null;
+    }
+
+    // ----- Grid (folder tiles) overview -----
+    if (sourcesView === "grid" && gridOpenFolder == null) {
+        tableEl.hidden = true;
+        if (grid) {
+            grid.hidden = false;
+            renderFolderGrid(grid, buckets, ungrouped, radioByFeed);
+        }
+        return;
+    }
+
+    // ----- Table: list view, or a drilled-into folder -----
+    if (grid) grid.hidden = true;
+    tableEl.hidden = false;
+    setupDropZone();
+    body.innerHTML = "";
+
+    if (sourcesView === "grid" && gridOpenFolder != null) {
+        renderFolderContents(body, gridOpenFolder, buckets, ungrouped, radioByFeed);
+        return;
+    }
+
+    if (!groups.length) {
+        // No user folders: flat list, then the radio folder underneath.
+        sorted.forEach((s) => body.appendChild(renderRow(s)));
+        appendRadioGroup(body, radioByFeed);
+        return;
+    }
+
     for (const g of groups) {
         const bucket = buckets.get(g.id);
         body.appendChild(groupHeaderRow(g, bucket.length));
@@ -1028,13 +1126,317 @@ function renderSources(sources) {
             body.appendChild(row);
         }
     }
+    appendRadioGroup(body, radioByFeed);
+}
+
+// ---- "App folder" grid view -------------------------------------------------
+// A scrollable 2-column grid of folder tiles. Clicking a tile drills into that
+// folder's sources (rendered in the table with a back link).
+function renderFolderGrid(grid, buckets, ungrouped, radioByFeed) {
+    grid.innerHTML = "";
+    for (const g of groups) {
+        const items = buckets.get(g.id) || [];
+        grid.appendChild(folderTile({
+            id: g.id,
+            icon: ICON.folder,
+            name: g.name,
+            count: items.length,
+            previews: items.map((s) => s.name),
+            badge: g.notify ? { text: "Notiser på", cls: "on" } : { text: "Tystad", cls: "off" },
+            muted: !g.notify,
+        }));
+    }
+    if (ungrouped.length) {
+        grid.appendChild(folderTile({
+            id: "__ungrouped__",
+            icon: ICON.lock,
+            name: "Permanenta källor",
+            count: ungrouped.length,
+            previews: ungrouped.map((s) => s.name),
+        }));
+    }
+    if (radioChannels.length) {
+        const on = radioChannels.filter((c) => {
+            const src = radioByFeed.get(c.feedUrl);
+            return src && src.is_active === 1;
+        });
+        grid.appendChild(folderTile({
+            id: RADIO_GROUP_ID,
+            icon: ICON.broadcast,
+            name: "P4-kanaler",
+            count: radioChannels.length,
+            countLabel: `${radioChannels.length} kanaler`,
+            previews: on.length ? on.map((c) => c.name) : ["Inga på än – slå på din region"],
+            badge: { text: on.length ? `${on.length} på` : "Av", cls: on.length ? "on" : "muted" },
+        }));
+    }
+}
+
+function folderTile({ id, icon, name, count, countLabel, previews = [], badge = null, muted = false }) {
+    const tile = document.createElement("button");
+    tile.type = "button";
+    tile.className = "folder-tile" + (muted ? " muted" : "");
+    tile.addEventListener("click", () => {
+        gridOpenFolder = id;
+        render();
+    });
+
+    const head = document.createElement("div");
+    head.className = "tile-head";
+    const ic = document.createElement("span");
+    ic.className = "tile-icon";
+    ic.innerHTML = icon;
+    const nm = document.createElement("span");
+    nm.className = "tile-name";
+    nm.textContent = name;
+    head.append(ic, nm);
+
+    const meta = document.createElement("div");
+    meta.className = "tile-meta";
+    const cnt = document.createElement("span");
+    cnt.className = "tile-count";
+    cnt.textContent = countLabel || `${count} ${count === 1 ? "källa" : "källor"}`;
+    meta.appendChild(cnt);
+    if (badge) {
+        const b = document.createElement("span");
+        b.className = "tile-badge " + badge.cls;
+        b.textContent = badge.text;
+        meta.appendChild(b);
+    }
+
+    const prev = document.createElement("div");
+    prev.className = "tile-preview";
+    if (previews.length) {
+        prev.textContent = previews.slice(0, 3).join(" · ") + (previews.length > 3 ? " …" : "");
+    } else {
+        prev.textContent = "Tom mapp";
+        prev.classList.add("empty");
+    }
+
+    tile.append(head, meta, prev);
+    return tile;
+}
+
+// Drill-in: a back link, then the chosen folder's sources in the table.
+function renderFolderContents(body, folderId, buckets, ungrouped, radioByFeed) {
+    const isRadio = folderId === RADIO_GROUP_ID;
+    const isPerm = folderId === "__ungrouped__";
+    const group = (!isRadio && !isPerm) ? groupsById.get(Number(folderId)) : null;
+    const title = isRadio ? "P4-kanaler" : isPerm ? "Permanenta källor" : (group ? group.name : "Mapp");
+
+    // Back row spanning the table.
+    const backTr = document.createElement("tr");
+    backTr.className = "group-row folder-back-row";
+    const backTd = document.createElement("td");
+    backTd.colSpan = 4;
+    const wrap = document.createElement("div");
+    wrap.className = "group-head";
+    const back = document.createElement("button");
+    back.className = "folder-back";
+    back.innerHTML = `${ICON.chevron} <span>Alla mappar</span>`;
+    back.title = "Tillbaka till mapparna";
+    back.addEventListener("click", () => { gridOpenFolder = null; render(); });
+    const heading = document.createElement("span");
+    heading.className = "folder-back-title";
+    heading.textContent = title;
+    const spacer = document.createElement("span");
+    spacer.style.flex = "1";
+    wrap.append(back, heading, spacer);
+    // For user folders, keep the mute toggle handy inside the folder too.
+    if (group) {
+        const toggle = document.createElement("button");
+        toggle.className = "group-toggle" + (group.notify ? " on" : " off");
+        toggle.innerHTML = `<span class="gt-ico">${group.notify ? ICON.bell : ICON.bellOff}</span><span class="gt-text">${group.notify ? "Notiser på" : "Tystad"}</span>`;
+        toggle.addEventListener("click", async () => {
+            toggle.disabled = true;
+            try { await patchGroup(group.id, { notify: !group.notify }); await render(); }
+            catch (err) { toast("Fel", err.message, ICON.alert); toggle.disabled = false; }
+        });
+        wrap.appendChild(toggle);
+    }
+    backTd.appendChild(wrap);
+    backTr.appendChild(backTd);
+    body.appendChild(backTr);
+
+    if (isRadio) {
+        for (const c of radioChannels) body.appendChild(renderRadioRow(c, radioByFeed.get(c.feedUrl) || null));
+        return;
+    }
+    const rows = isPerm ? ungrouped : (buckets.get(Number(folderId)) || []);
+    if (!rows.length) {
+        const emptyTr = document.createElement("tr");
+        const emptyTd = document.createElement("td");
+        emptyTd.colSpan = 4;
+        emptyTd.className = "folder-empty";
+        emptyTd.textContent = "Inga källor i mappen än.";
+        emptyTr.appendChild(emptyTd);
+        body.appendChild(emptyTr);
+        return;
+    }
+    for (const s of rows) {
+        const row = renderRow(s);
+        if (group && !group.notify) row.classList.add("in-muted-group");
+        body.appendChild(row);
+    }
+}
+
+// Render the built-in "P4-kanaler" folder: a collapsible header plus one row
+// per channel, each with an on/off switch. `radioByFeed` maps a channel feed
+// URL to the user's existing source for it (if any).
+function appendRadioGroup(body, radioByFeed) {
+    if (!radioChannels.length) return;
+    const activeCount = radioChannels.filter((c) => {
+        const src = radioByFeed.get(c.feedUrl);
+        return src && src.is_active === 1;
+    }).length;
+
+    body.appendChild(radioHeaderRow(activeCount));
+    const folded = isCollapsed(RADIO_GROUP_ID);
+    for (const c of radioChannels) {
+        const row = renderRadioRow(c, radioByFeed.get(c.feedUrl) || null);
+        if (folded) row.classList.add("row-collapsed");
+        body.appendChild(row);
+    }
+}
+
+function radioHeaderRow(activeCount) {
+    const collapsed = isCollapsed(RADIO_GROUP_ID);
+    const tr = document.createElement("tr");
+    tr.className = "group-row radio-row" + (collapsed ? " collapsed" : "");
+    const td = document.createElement("td");
+    td.colSpan = 4;
+    const wrap = document.createElement("div");
+    wrap.className = "group-head";
+
+    const caret = document.createElement("button");
+    caret.className = "group-caret";
+    caret.innerHTML = ICON.chevron;
+    caret.title = collapsed ? "Visa kanaler" : "Dölj kanaler";
+    caret.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    caret.addEventListener("click", () => toggleGroupCollapse(tr, RADIO_GROUP_ID, caret));
+
+    const icon = document.createElement("span");
+    icon.className = "group-icon";
+    icon.innerHTML = ICON.broadcast;
+
+    const name = document.createElement("button");
+    name.className = "group-name group-name-btn";
+    name.textContent = "P4-kanaler";
+    name.title = collapsed ? "Visa kanaler" : "Dölj kanaler";
+    name.addEventListener("click", () => toggleGroupCollapse(tr, RADIO_GROUP_ID, caret));
+
+    const hint = document.createElement("span");
+    hint.className = "radio-head-hint";
+    hint.textContent = activeCount ? `${activeCount} på` : "Slå på din region";
+    hint.title = "Sveriges Radios lokala P4-kanaler – slå på de du vill bevaka";
+
+    const main = document.createElement("div");
+    main.className = "group-head-main";
+    main.append(caret, icon, name);
+    wrap.append(main, hint);
+    td.appendChild(wrap);
+    tr.appendChild(td);
+    return tr;
+}
+
+function renderRadioRow(channel, source) {
+    const on = !!(source && source.is_active === 1);
+    const tr = document.createElement("tr");
+    tr.className = "radio-channel-row" + (on ? "" : " inactive");
+
+    // Status: simple on/off pill so the column isn't empty.
+    const tdStatus = document.createElement("td");
+    const pill = document.createElement("span");
+    pill.className = "radio-state " + (on ? "on" : "off");
+    pill.textContent = on ? "På" : "Av";
+    tdStatus.appendChild(pill);
+    tr.appendChild(tdStatus);
+
+    // Källa: channel name + a quiet link to the SR page.
+    const tdSource = document.createElement("td");
+    const cell = document.createElement("div");
+    cell.className = "source-cell";
+    cell.appendChild(buildFavicon(channel.pageUrl, channel.name));
+    const meta = document.createElement("div");
+    meta.className = "source-meta";
+    const nm = document.createElement("span");
+    nm.className = "source-name";
+    nm.textContent = channel.name;
+    const a = document.createElement("a");
+    a.className = "source-url";
+    a.href = channel.pageUrl;
+    a.target = "_blank";
+    a.rel = "noreferrer";
+    a.textContent = "Sveriges Radio";
+    meta.append(nm, a);
+    // Same live "kontrollerad X · nästa Y" heartbeat as any other source, but
+    // only once the channel is being watched (i.e. a source exists).
+    if (source) {
+        const hb = document.createElement("div");
+        hb.className = "heartbeat";
+        hb.dataset.checked = source.last_checked_at || "";
+        hb.dataset.next = source.next_check_at || "";
+        hb.dataset.active = source.is_active === 1 ? "1" : "0";
+        hb.textContent = heartbeatText(source.last_checked_at, source.next_check_at, source.is_active === 1);
+        meta.appendChild(hb);
+    }
+    cell.appendChild(meta);
+    tdSource.appendChild(cell);
+    tr.appendChild(tdSource);
+
+    // Larmade: last alert time for the channel, if any.
+    tr.appendChild(timeCell(source ? source.last_notified_at : null, "Vi larmade"));
+
+    // Actions: the on/off switch.
+    const tdActions = document.createElement("td");
+    const actions = document.createElement("div");
+    actions.className = "row-actions";
+    const label = document.createElement("label");
+    label.className = "switch";
+    label.title = on ? "Slå av larm från kanalen" : "Slå på larm från kanalen";
+    const cb = document.createElement("input");
+    cb.type = "checkbox";
+    cb.checked = on;
+    cb.addEventListener("change", async () => {
+        cb.disabled = true;
+        try {
+            await toggleRadioChannel(channel, source, cb.checked);
+            await render();
+        } catch (err) {
+            toast("Fel", err.message, ICON.alert);
+            cb.checked = !cb.checked;
+            cb.disabled = false;
+        }
+    });
+    const slider = document.createElement("span");
+    slider.className = "slider";
+    label.append(cb, slider);
+    actions.appendChild(label);
+    tdActions.appendChild(actions);
+    tr.appendChild(tdActions);
+
+    return tr;
+}
+
+// On = create the source (first time) or un-pause it; Off = pause it (kept).
+async function toggleRadioChannel(channel, source, turnOn) {
+    if (turnOn) {
+        if (source) {
+            await toggleSource(source.id, true);
+        } else {
+            await addSource({ name: channel.name, url: channel.pageUrl });
+            toast("Kanal på", `${channel.name} bevakas nu`, ICON.rssBadge);
+        }
+    } else if (source) {
+        await toggleSource(source.id, false);
+    }
 }
 
 async function render() {
     if (isRendering) return;
     isRendering = true;
     try {
-        const [sources, grps] = await Promise.all([fetchSources(), fetchGroups()]);
+        const [sources, grps] = await Promise.all([fetchSources(), fetchGroups(), fetchRadioChannels()]);
         groups = Array.isArray(grps) ? grps : [];
         groupsById = new Map(groups.map((g) => [g.id, g]));
         mutedSourceIds = new Set();
@@ -1303,7 +1705,7 @@ function handleAlert(payload, { sound = true } = {}) {
     const title = payload.name || "Källa";
     const body = payload.latest_item_title || "Uppdatering upptäckt";
     toast(title, body, ICON.broadcast);
-    notify(title, body);
+    notify(title, body, payload.latest_item_url || payload.url || null);
 }
 
 // =====================
@@ -1508,6 +1910,31 @@ if (newGroupBtn) {
         }
     });
 }
+
+// View toggle: flip the sources panel between the flat list and the folder grid.
+function syncViewToggle() {
+    const tg = $("viewToggle");
+    if (!tg) return;
+    tg.querySelectorAll(".seg").forEach((b) => {
+        b.classList.toggle("active", b.dataset.view === sourcesView);
+        b.setAttribute("aria-selected", b.dataset.view === sourcesView ? "true" : "false");
+    });
+}
+(function initViewToggle() {
+    const tg = $("viewToggle");
+    if (!tg) return;
+    tg.querySelectorAll(".seg").forEach((b) => {
+        b.addEventListener("click", () => {
+            if (sourcesView === b.dataset.view) return;
+            sourcesView = b.dataset.view;
+            gridOpenFolder = null; // always land on the overview when switching
+            try { localStorage.setItem(SOURCES_VIEW_KEY, sourcesView); } catch { /* ignore */ }
+            syncViewToggle();
+            render();
+        });
+    });
+    syncViewToggle();
+})();
 
 // =====================
 // Add-source form

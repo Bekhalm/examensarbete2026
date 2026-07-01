@@ -55,7 +55,11 @@
                 <div class="panel-head">
                     <div class="panel-head-text">
                         <h2>Bevakade källor</h2>
-                        <p class="panel-sub">Sajter du följer – lägg till en webbadress eller ett RSS-flöde.</p>
+                        <p class="panel-sub">Sajter och kanaler du följer – lägg till en webbadress eller ett RSS-flöde.</p>
+                    </div>
+                    <div class="view-toggle" id="viewToggle" role="tablist" aria-label="Visningsläge">
+                        <button class="seg" type="button" data-view="list" title="Visa som lista">Lista</button>
+                        <button class="seg" type="button" data-view="grid" title="Visa som mappar">Mappar</button>
                     </div>
                 </div>
 
@@ -93,6 +97,7 @@
                         </thead>
                         <tbody id="sourcesBody"></tbody>
                     </table>
+                    <div id="sourcesGrid" class="sources-grid" hidden></div>
                 </div>
             </section>
 
